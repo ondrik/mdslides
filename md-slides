@@ -1,46 +1,147 @@
 #!/usr/bin/env python3
+
+"""Convert Markdown into LaTeX Beamer slides.
+
+A lightweight alternative to `pandoc -t beamer', built on marko.  The guiding
+principle is LaTeX passthrough: whatever the Markdown parser does not
+recognize is handed over to LaTeX untouched, so a slide can always fall back
+to raw LaTeX.
+
+The Beamer preamble lives in an external template file (see --template).
+"""
+
 import argparse
 import marko
+import os
 import string
 import sys
 
-###########################################
-def process_header(ast):
-    """process_header() -> dict()
+DEFAULT_TEMPLATE = 'beamer.tex.tpl'
+TEMPLATE_ENV_VAR = 'MD_SLIDES_TEMPLATE'
 
-Processes header and returns a dict().
+
+###########################################
+def find_template():
+    """find_template() -> str
+
+Returns the path to the default template: the one named by $MD_SLIDES_TEMPLATE
+if set, otherwise the one shipped next to this script.
 """
-    pass
+    from_env = os.environ.get(TEMPLATE_ENV_VAR)
+    if from_env:
+        return from_env
+
+    return os.path.join(os.path.dirname(os.path.realpath(__file__)),
+                        DEFAULT_TEMPLATE)
+
+
+###########################################
+def split_frontmatter(text):
+    """split_frontmatter(str) -> (dict, str)
+
+Splits the leading YAML metadata block off `text' and returns the parsed
+metadata together with the remaining Markdown body.
+"""
+    # TODO: split on the '---' fences, drop <!-- ... --> lines, yaml.safe_load()
+    return {}, text
+
+
+###########################################
+def build_variables(meta, slides):
+    """build_variables(dict, str) -> dict
+
+Turns the document metadata into the substitution mapping for the template.
+"""
+    # TODO: derive documentclass options, join author/institute lists,
+    #       pass header-includes through, ...
+    variables = dict(meta)
+    variables['slides'] = slides
+    return variables
+
+
+###########################################
+def render_slides(ast, opts):
+    """render_slides(marko AST, argparse.Namespace) -> str
+
+Renders the body of the presentation: one frame per heading of level
+`opts.slide_level'.
+"""
+    if opts.dump_ast:
+        for child in ast.children:
+            print(child, file=sys.stderr)
+
+    # TODO: replace with a marko Renderer emitting \begin{frame} ... \end{frame}
+    return '% TODO: slides\n'
+
+
+###########################################
+def convert(text, template, opts):
+    """convert(str, str, argparse.Namespace) -> str
+
+Converts the Markdown source `text' into a complete Beamer document.
+"""
+    meta, body = split_frontmatter(text)
+
+    ast = marko.Markdown().parse(body)
+    slides = render_slides(ast, opts)
+
+    variables = build_variables(meta, slides)
+    variables.update(opts.variable)
+
+    return string.Template(template).safe_substitute(variables)
+
+
+###########################################
+def parse_args(argv=None):
+    """parse_args([str]) -> argparse.Namespace"""
+    parser = argparse.ArgumentParser(
+                prog='md-slides',
+                description="Convert Markdown into LaTeX Beamer slides.")
+    parser.add_argument("file", nargs="?",
+                        help="input markdown file (default: stdin)",
+                        type=argparse.FileType('r'), default=sys.stdin)
+    parser.add_argument('-o', '--output', metavar='FILE',
+                        help="output .tex file (default: stdout)",
+                        type=argparse.FileType('w'), default=sys.stdout)
+    parser.add_argument('-t', '--template', type=argparse.FileType('r'),
+                        help="Beamer template file (default: %s next to this "
+                             "script, or $%s)"
+                             % (DEFAULT_TEMPLATE, TEMPLATE_ENV_VAR))
+    parser.add_argument('-V', '--variable', action='append', default=[],
+                        metavar='KEY=VALUE',
+                        help="set a template variable, overriding the "
+                             "metadata block (repeatable)")
+    parser.add_argument('-l', '--slide-level', type=int, default=1,
+                        metavar='N',
+                        help="heading level that starts a new frame "
+                             "(default: %(default)s)")
+    parser.add_argument('-d', '--dump-ast', action='store_true',
+                        help="dump the parsed Markdown tree to stderr")
+    parser.add_argument('--version', action='version', version='%(prog)s 0.1')
+
+    args = parser.parse_args(argv)
+
+    # -V key=value pairs are more useful as a dict
+    variables = {}
+    for item in args.variable:
+        key, sep, value = item.partition('=')
+        if not sep:
+            parser.error("-V expects KEY=VALUE, got '%s'" % item)
+        variables[key.strip()] = value
+    args.variable = variables
+
+    if args.template is None:
+        path = find_template()
+        try:
+            args.template = open(path, 'r')
+        except OSError as exc:
+            parser.error("cannot open the default template: %s" % exc)
+
+    return args
 
 
 ###########################################
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(
-                description="??????????????????????")
-    parser.add_argument("file", nargs="?",
-                        help="input markdown file",
-                        type=argparse.FileType('r'), default=sys.stdin)
-    parser.add_argument('-t', '--template', type=argparse.FileType('r'),
-                        required=True,
-                        help="path to template file")
+    args = parse_args()
 
-    args = parser.parse_args()
-    template = string.Template(args.template.read())
-    mapping = {'aspectratio': '169', 'title': 'BUM', 'shorttitle': 'BAC', 'slides': 'WIP'}
-    result = template.substitute(mapping)
-    print(result)
-
-    doc = marko.Markdown()
-    ast = doc.parse(args.file.read())
-
-    for child in ast.children:
-        print(child)
-
-    header = process_header(ast)
-
-    # with open(args.fila, "r") as file:
-    #     doc = marko.Markdown()
-    #     ast = doc.parse(file.read())
-    #     print(ast)
-    #
-    #     header = process_header(ast)
+    args.output.write(convert(args.file.read(), args.template.read(), args))

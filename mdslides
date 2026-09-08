@@ -53,6 +53,29 @@ if set, otherwise the one shipped next to this script.
 
 
 ###########################################
+def open_file(parser, path, mode, standard=None, what='file'):
+    """open_file(ArgumentParser, str, str, file, str) -> file
+
+Opens `path' in `mode', or returns `standard' if the path is '-'.  Files are
+UTF-8 regardless of the locale, since a deck is likely to contain accented
+characters.  A path that cannot be opened is a usage error, reported through
+`parser', which exits with status 2.
+"""
+    if path == '-' and standard is not None:
+        # Make sure a piped deck is decoded as UTF-8 too.  Under pytest the
+        # standard streams are replaced by objects without reconfigure().
+        if hasattr(standard, 'reconfigure'):
+            standard.reconfigure(encoding='utf-8')
+        return standard
+
+    try:
+        return open(path, mode, encoding='utf-8')
+    except OSError as exc:
+        parser.error("cannot open the %s '%s': %s"
+                     % (what, path, exc.strerror))
+
+
+###########################################
 def split_frontmatter(text):
     """split_frontmatter(str) -> (dict, str)
 
@@ -132,13 +155,13 @@ def parse_args(argv=None):
     parser = argparse.ArgumentParser(
                 prog=PROG,
                 description="Convert Markdown into LaTeX Beamer slides.")
-    parser.add_argument("file", nargs="?",
-                        help="input markdown file (default: stdin)",
-                        type=argparse.FileType('r'), default=sys.stdin)
-    parser.add_argument('-o', '--output', metavar='FILE',
-                        help="output .tex file (default: stdout)",
-                        type=argparse.FileType('w'), default=sys.stdout)
-    parser.add_argument('-t', '--template', type=argparse.FileType('r'),
+    parser.add_argument("file", nargs="?", default='-', metavar='FILE',
+                        help="input markdown file, '-' for stdin "
+                             "(default: stdin)")
+    parser.add_argument('-o', '--output', metavar='FILE', default='-',
+                        help="output .tex file, '-' for stdout "
+                             "(default: stdout)")
+    parser.add_argument('-t', '--template', metavar='FILE',
                         help="Beamer template file (default: %s next to this "
                              "script, or $%s)"
                              % (DEFAULT_TEMPLATE, TEMPLATE_ENV_VAR))
@@ -166,12 +189,14 @@ def parse_args(argv=None):
         variables[key.strip()] = value
     args.variable = variables
 
+    args.file = open_file(parser, args.file, 'r', sys.stdin, 'input file')
+    args.output = open_file(parser, args.output, 'w', sys.stdout, 'output file')
+
     if args.template is None:
-        path = find_template()
-        try:
-            args.template = open(path, 'r')
-        except OSError as exc:
-            parser.error("cannot open the default template: %s" % exc)
+        args.template = open_file(parser, find_template(), 'r',
+                                  what='default template')
+    else:
+        args.template = open_file(parser, args.template, 'r', what='template')
 
     return args
 

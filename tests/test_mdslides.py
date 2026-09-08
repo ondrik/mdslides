@@ -5,7 +5,9 @@
     pytest -v                           # per-test names
 """
 
+import os
 import subprocess
+import sys
 import textwrap
 
 import pytest
@@ -164,7 +166,6 @@ def test_template_empty_environment_variable_is_ignored(mdslides, monkeypatch,
 ###########################################
 
 def test_args_defaults(parse_args, template_path):
-    import sys
     args = parse_args([])
     assert args.file is sys.stdin
     assert args.output is sys.stdout
@@ -185,6 +186,19 @@ def test_args_defaults(parse_args, template_path):
 ])
 def test_args_variables_become_a_dict(parse_args, argv, expected):
     assert parse_args(argv).variable == expected
+
+
+def test_args_dash_means_the_standard_streams(parse_args):
+    args = parse_args(['-', '-o', '-'])
+    assert args.file is sys.stdin
+    assert args.output is sys.stdout
+
+
+def test_args_missing_input_file_is_an_error(mdslides, capsys):
+    with pytest.raises(SystemExit):
+        mdslides.parse_args(['/no/such/deck.md'])
+    assert "cannot open the input file '/no/such/deck.md'" \
+        in capsys.readouterr().err
 
 
 def test_args_variable_without_a_value_is_an_error(mdslides, capsys):
@@ -296,12 +310,14 @@ def test_deck_converts_to_a_document(mdslides, deck, template, opts):
 ###########################################
 
 def run(script, *argv, stdin=None):
+    """Run the script as a command.  UTF-8 explicitly, so that the non-ASCII
+    test exercises the script rather than the locale of whoever runs pytest.
+    """
     return subprocess.run([script] + list(argv), input=stdin,
-                          capture_output=True, text=True)
+                          capture_output=True, encoding='utf-8')
 
 
 def test_cli_is_executable(script):
-    import os
     assert os.access(script, os.X_OK), 'mdslides is not executable'
 
 
@@ -345,6 +361,32 @@ def test_cli_dump_ast_keeps_stdout_clean(script, deck_path):
     assert done.returncode == 0, done.stderr
     assert 'Heading' in done.stderr
     assert '\\documentclass' in done.stdout
+
+
+def test_cli_explicit_dash_reads_stdin(script):
+    done = run(script, '-', stdin='# Slide\n')
+    assert done.returncode == 0, done.stderr
+    assert '\\documentclass' in done.stdout
+
+
+def test_cli_unwritable_output_is_an_error(script, deck_path, tmp_path):
+    done = run(script, deck_path, '-o', str(tmp_path / 'no' / 'such' / 'o.tex'))
+    assert done.returncode == 2
+    assert 'cannot open' in done.stderr
+
+
+@pytest.mark.parametrize('source', ['stdin', 'file'])
+def test_cli_handles_non_ascii(script, tmp_path, source):
+    """UTF-8 whatever the locale says; FileType used the locale encoding."""
+    text = '---\ntitle: "Ondřej Lengál"\n---\n\n# Přehled\n'
+    if source == 'stdin':
+        done = run(script, stdin=text)
+    else:
+        deck = tmp_path / 'deck.md'
+        deck.write_text(text, encoding='utf-8')
+        done = run(script, str(deck))
+    assert done.returncode == 0, done.stderr
+    assert 'Ondřej Lengál' in done.stdout
 
 
 @pytest.mark.parametrize('argv, code', [

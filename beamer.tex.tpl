@@ -1,13 +1,21 @@
-\documentclass[dvipsnames,aspectratio=$aspectratio]{beamer}
+%% Beamer template for mdslides.
+%%
+%% The variables below are filled in from the YAML metadata block at the top
+%% of the Markdown source, or from -V.  string.Template has no
+%% conditionals, so build_variables() guarantees every variable below has a
+%% value, falling back to a sane default when the metadata is silent.
+
+\documentclass[$classoptions]{beamer}
 
 \mode<presentation>
 {
-    \usetheme{Boadilla}
-    %\usetheme{CambridgeUS}
-    %\usetheme{Madrid} %%%
+    % metadata: theme, colortheme, fonttheme
+    % themes worth a try: Boadilla, CambridgeUS, Madrid
+    % colour themes: dolphin, seahorse
+    \usetheme{$theme}
+    \usecolortheme{$colortheme}
+    \usefonttheme{$fonttheme}
     %\setbeamercovered{transparent}
-    %\usecolortheme{seahorse}
-    \usecolortheme{dolphin}
 }
 
 \setbeamertemplate{itemize item}[square]
@@ -17,7 +25,7 @@
 \setbeamertemplate{section in toc}[square]
 \setbeamertemplate{navigation symbols}{}
 
-\usepackage{palatino}
+\usepackage{$fontfamily}          % metadata: fontfamily
 \usepackage{color}
 \usepackage{graphicx}
 
@@ -36,22 +44,20 @@
 \newcommand{\pausex}[0]{\xpause}
 % \newcommand{\xpause}[0]{}
 
-\title[$shorttitle]{
-$title
-}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% metadata: header-includes.  Last in the preamble, so that whatever it
+%% pulls in (\input{macros.tex}, \input{stylesheet.tex}, ...) can override
+%% what is set above.
+$headerincludes
 
-\author[Havlík, \underline{\textbf{Lengál}} (Brno UT)]
-{
-  Jakub Havlík \and \hlbl{\bf Ondřej Lengál}
-}
-
-\institute
-[]
-{
-Brno University of Technology, Czech Republic
-}
-
-\date[FMQC'26]{FMQC'26}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% The bracketed forms are the short versions beamer puts in the footline.
+%% metadata: title, short-title, author, short-author, institute,
+%%           short-institute, date, short-date
+\title[$shorttitle]{$title}
+\author[$shortauthor]{$author}
+\institute[$shortinstitute]{$institute}
+\date[$shortdate]{$date}
 
 \begin{document}
 

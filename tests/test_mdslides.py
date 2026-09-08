@@ -6,6 +6,8 @@
 """
 
 import os
+import re
+import string
 import subprocess
 import sys
 import textwrap
@@ -220,6 +222,91 @@ def test_args_slide_level(parse_args, argv):
 
 
 ###########################################
+# build_variables() -- metadata into template substitutions
+###########################################
+
+def test_variables_pass_metadata_through(mdslides):
+    variables = mdslides.build_variables({'theme': 'Madrid'}, 'BODY')
+    assert variables['theme'] == 'Madrid'
+    assert variables['slides'] == 'BODY'
+
+
+def test_variables_supply_defaults(mdslides):
+    variables = mdslides.build_variables({}, '')
+    for name, value in mdslides.TEMPLATE_DEFAULTS.items():
+        assert variables[name] == value
+
+
+def test_variables_ignore_empty_metadata_entries(mdslides):
+    """'titlegraphic:' with no value must not override a default."""
+    variables = mdslides.build_variables({'theme': None}, '')
+    assert variables['theme'] == mdslides.TEMPLATE_DEFAULTS['theme']
+
+
+@pytest.mark.parametrize('key', ['author', 'institute'])
+def test_variables_join_people_with_and(mdslides, key):
+    variables = mdslides.build_variables({key: ['Jakub Havlík', 'Ondřej Lengál']}, '')
+    assert variables[key] == 'Jakub Havlík \\and Ondřej Lengál'
+
+
+@pytest.mark.parametrize('key', ['author', 'institute'])
+def test_variables_accept_a_lone_name(mdslides, key):
+    variables = mdslides.build_variables({key: 'Ondřej Lengál'}, '')
+    assert variables[key] == 'Ondřej Lengál'
+
+
+def test_variables_join_other_lists_with_newlines(mdslides):
+    variables = mdslides.build_variables(
+        {'header-includes': ['\\usepackage{listings}', '\\input{macros.tex}']}, '')
+    assert variables['headerincludes'] == \
+        '\\usepackage{listings}\n\\input{macros.tex}'
+
+
+def test_variables_alias_hyphenated_keys(mdslides):
+    """string.Template cannot reach '$header-includes'."""
+    variables = mdslides.build_variables({'header-includes': 'X'}, '')
+    assert variables['headerincludes'] == 'X'
+    assert variables['header-includes'] == 'X'
+
+
+@pytest.mark.parametrize('meta, expected', [
+    pytest.param({}, 'dvipsnames', id='bare'),
+    pytest.param({'aspectratio': 169}, 'dvipsnames,aspectratio=169',
+                 id='aspectratio'),
+    pytest.param({'fontsize': '10pt'}, 'dvipsnames,10pt', id='fontsize'),
+    pytest.param({'fontsize': '10pt', 'aspectratio': 169},
+                 'dvipsnames,10pt,aspectratio=169', id='both'),
+    pytest.param({'classoption': ['handout', 'draft']},
+                 'dvipsnames,handout,draft', id='extra-options'),
+])
+def test_variables_build_the_documentclass_options(mdslides, meta, expected):
+    """One string, so that an absent option cannot leave a stray comma."""
+    assert mdslides.build_variables(meta, '')['classoptions'] == expected
+
+
+@pytest.mark.parametrize('short, long', [
+    pytest.param('shorttitle', 'title', id='title'),
+    pytest.param('shortauthor', 'author', id='author'),
+    pytest.param('shortdate', 'date', id='date'),
+])
+def test_variables_short_forms_fall_back_to_the_long_ones(mdslides, short, long):
+    variables = mdslides.build_variables({long: 'Long Form'}, '')
+    assert variables[short] == 'Long Form'
+
+
+def test_variables_short_institute_defaults_to_empty(mdslides):
+    """The footline is cramped and a full affiliation rarely fits."""
+    variables = mdslides.build_variables({'institute': 'Brno University'}, '')
+    assert variables['shortinstitute'] == ''
+
+
+@pytest.mark.parametrize('key', ['short-title', 'shorttitle'])
+def test_variables_explicit_short_form_wins(mdslides, key):
+    variables = mdslides.build_variables({'title': 'Long', key: 'Short'}, '')
+    assert variables['shorttitle'] == 'Short'
+
+
+###########################################
 # convert() -- the whole pipeline, with the template applied
 ###########################################
 
@@ -247,9 +334,29 @@ def test_convert_command_line_variables_override_the_metadata(convert):
     assert 'FromMetadata' not in result
 
 
-def test_convert_leaves_unknown_placeholders_alone(convert):
-    """safe_substitute(): a variable we cannot fill yet is not fatal."""
-    assert '$shorttitle' in convert('# Slide\n')
+def test_convert_leaves_unknown_placeholders_alone(mdslides, opts):
+    """safe_substitute(): a variable we cannot fill is not fatal."""
+    result = mdslides.convert('# Slide\n', 'a $nosuchvariable b $slides', opts())
+    assert '$nosuchvariable' in result
+
+
+def test_shipped_template_is_fully_substituted(mdslides, deck, template):
+    """No '$name' may reach LaTeX, where it would be read as maths.
+
+Rendered with an empty body on purpose: once the renderer emits real slides
+they will contain $maths$, which is not what this test is about.
+"""
+    meta, _ = mdslides.split_frontmatter(deck)
+    filled = string.Template(template).safe_substitute(
+        mdslides.build_variables(meta, ''))
+    assert re.findall(r'\$[A-Za-z_]\w*', filled) == []
+
+
+def test_shipped_template_is_substituted_without_any_metadata(mdslides, template):
+    """The defaults have to cover a document with no metadata block at all."""
+    filled = string.Template(template).safe_substitute(
+        mdslides.build_variables({}, ''))
+    assert re.findall(r'\$[A-Za-z_]\w*', filled) == []
 
 
 def test_convert_dump_ast_goes_to_stderr_only(convert, capsys):

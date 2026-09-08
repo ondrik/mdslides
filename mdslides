@@ -24,6 +24,36 @@ VERSION = '0.1'
 DEFAULT_TEMPLATE = 'beamer.tex.tpl'
 TEMPLATE_ENV_VAR = 'MD_SLIDES_TEMPLATE'
 
+# string.Template has no conditionals, so a variable the template mentions
+# must always resolve to something: an unsubstituted '$theme' would reach
+# LaTeX and be read as maths.  These are the values used when the metadata
+# block says nothing.  'default' is a real Beamer theme name in all three
+# cases, so the fallbacks produce a plain but valid presentation.
+TEMPLATE_DEFAULTS = {
+    'theme': 'default',
+    'colortheme': 'default',
+    'fonttheme': 'default',
+    # what the template used to hard-code, so that a deck which says nothing
+    # about fonts still looks the way it did
+    'fontfamily': 'palatino',
+    'title': '',
+    'author': '',
+    'institute': '',
+    'date': '',
+    'headerincludes': '',
+}
+
+# Metadata that is a list of people or places, rather than a block of text.
+JOINED_WITH_AND = ('author', 'institute')
+
+# Short forms for the footline; each falls back to its long form.
+SHORT_FORMS = (('shorttitle', 'title'),
+               ('shortauthor', 'author'),
+               ('shortdate', 'date'),
+               # beamer's footline is cramped, and the full affiliation
+               # rarely fits, so this one defaults to empty instead
+               ('shortinstitute', None))
+
 # A YAML metadata block, fenced by '---' and closed by '---' or '...'.  Only
 # recognized at the very start of the document, where CommonMark would
 # otherwise see a thematic break.
@@ -105,14 +135,59 @@ numbers in the body still match the input file.
 
 
 ###########################################
+def as_list(value):
+    """as_list(object) -> list
+
+Wraps a lone metadata value in a list, so that 'author: X' and a YAML list of
+authors can be handled the same way.
+"""
+    if value is None or value == '':
+        return []
+    if isinstance(value, (list, tuple)):
+        return list(value)
+    return [value]
+
+
+###########################################
 def build_variables(meta, slides):
     """build_variables(dict, str) -> dict
 
 Turns the document metadata into the substitution mapping for the template.
+
+Every variable the shipped template mentions is guaranteed to be present, so
+that no '$name' can leak into the LaTeX output.  Metadata keys are passed
+through as they are, which lets a custom template use anything from the
+metadata block.
 """
-    # TODO: derive documentclass options, join author/institute lists,
-    #       pass header-includes through, ...
-    variables = dict(meta)
+    variables = dict(TEMPLATE_DEFAULTS)
+
+    for key, value in meta.items():
+        if value is None:               # e.g. a bare 'logo:' with no value
+            continue
+        if key in JOINED_WITH_AND:
+            value = ' \\and '.join(str(item) for item in as_list(value))
+        elif isinstance(value, (list, tuple)):
+            value = '\n'.join(str(item) for item in value)
+        variables[key] = value
+        if '-' in key:
+            # string.Template only recognizes identifiers, so
+            # 'header-includes' has to be reachable as '$headerincludes'
+            variables[key.replace('-', '')] = value
+
+    # Options for \documentclass, as one string: an empty one would leave a
+    # stray comma behind, which LaTeX complains about.
+    options = ['dvipsnames']
+    if meta.get('fontsize'):
+        options.append(str(meta['fontsize']))
+    if meta.get('aspectratio'):
+        options.append('aspectratio=%s' % meta['aspectratio'])
+    options.extend(str(option) for option in as_list(meta.get('classoption')))
+    variables['classoptions'] = ','.join(options)
+
+    for short, long in SHORT_FORMS:
+        if not variables.get(short):
+            variables[short] = variables[long] if long else ''
+
     variables['slides'] = slides
     return variables
 
@@ -140,10 +215,15 @@ Converts the Markdown source `text' into a complete Beamer document.
 """
     meta, body = split_frontmatter(text)
 
+    # -V overrides the metadata block before anything is derived from it, so
+    # that '-V title=...' also reaches the short title in the footline.
+    meta.update(opts.variable)
+
     ast = marko.Markdown().parse(body)
     slides = render_slides(ast, opts)
 
     variables = build_variables(meta, slides)
+    # -V can also set a template variable that is not metadata at all
     variables.update(opts.variable)
 
     return string.Template(template).safe_substitute(variables)

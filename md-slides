@@ -13,11 +13,25 @@ The Beamer preamble lives in an external template file (see --template).
 import argparse
 import marko
 import os
+import re
 import string
 import sys
+import yaml
 
 DEFAULT_TEMPLATE = 'beamer.tex.tpl'
 TEMPLATE_ENV_VAR = 'MD_SLIDES_TEMPLATE'
+
+# A YAML metadata block, fenced by '---' and closed by '---' or '...'.  Only
+# recognized at the very start of the document, where CommonMark would
+# otherwise see a thematic break.
+FRONTMATTER_RE = re.compile(r"""\A---[ \t]*\r?\n              # opening fence
+                                (.*?)                         # the YAML itself
+                                ^(?:---|\.\.\.)[ \t]*\r?$\r?\n?  # closing fence
+                             """, re.DOTALL | re.MULTILINE | re.VERBOSE)
+
+# HTML comments are legal in Markdown but not in YAML, and they are a handy
+# way to disable a metadata line, e.g. '<!--lang: en-->'.
+YAML_COMMENT_RE = re.compile(r'^[ \t]*<!--.*?-->[ \t]*$\n?', re.MULTILINE)
 
 
 ###########################################
@@ -40,10 +54,28 @@ def split_frontmatter(text):
     """split_frontmatter(str) -> (dict, str)
 
 Splits the leading YAML metadata block off `text' and returns the parsed
-metadata together with the remaining Markdown body.
+metadata together with the remaining Markdown body.  A document without a
+metadata block yields an empty dict and the text unchanged.
+
+The block is replaced by as many blank lines as it occupied, so that line
+numbers in the body still match the input file.
 """
-    # TODO: split on the '---' fences, drop <!-- ... --> lines, yaml.safe_load()
-    return {}, text
+    match = FRONTMATTER_RE.match(text)
+    if not match:
+        return {}, text
+
+    try:
+        meta = yaml.safe_load(YAML_COMMENT_RE.sub('', match.group(1)))
+    except yaml.YAMLError as exc:
+        sys.exit("md-slides: cannot parse the metadata block: %s" % exc)
+
+    if meta is None:            # an empty metadata block
+        meta = {}
+    if not isinstance(meta, dict):
+        sys.exit("md-slides: the metadata block must be a mapping, got %s"
+                 % type(meta).__name__)
+
+    return meta, '\n' * match.group(0).count('\n') + text[match.end():]
 
 
 ###########################################

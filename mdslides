@@ -18,6 +18,9 @@ import string
 import sys
 import yaml
 
+PROG = 'mdslides'
+VERSION = '0.1'
+
 DEFAULT_TEMPLATE = 'beamer.tex.tpl'
 TEMPLATE_ENV_VAR = 'MD_SLIDES_TEMPLATE'
 
@@ -67,13 +70,13 @@ numbers in the body still match the input file.
     try:
         meta = yaml.safe_load(YAML_COMMENT_RE.sub('', match.group(1)))
     except yaml.YAMLError as exc:
-        sys.exit("md-slides: cannot parse the metadata block: %s" % exc)
+        sys.exit("%s: cannot parse the metadata block: %s" % (PROG, exc))
 
     if meta is None:            # an empty metadata block
         meta = {}
     if not isinstance(meta, dict):
-        sys.exit("md-slides: the metadata block must be a mapping, got %s"
-                 % type(meta).__name__)
+        sys.exit("%s: the metadata block must be a mapping, got %s"
+                 % (PROG, type(meta).__name__))
 
     return meta, '\n' * match.group(0).count('\n') + text[match.end():]
 
@@ -127,7 +130,7 @@ Converts the Markdown source `text' into a complete Beamer document.
 def parse_args(argv=None):
     """parse_args([str]) -> argparse.Namespace"""
     parser = argparse.ArgumentParser(
-                prog='md-slides',
+                prog=PROG,
                 description="Convert Markdown into LaTeX Beamer slides.")
     parser.add_argument("file", nargs="?",
                         help="input markdown file (default: stdin)",
@@ -149,7 +152,8 @@ def parse_args(argv=None):
                              "(default: %(default)s)")
     parser.add_argument('-d', '--dump-ast', action='store_true',
                         help="dump the parsed Markdown tree to stderr")
-    parser.add_argument('--version', action='version', version='%(prog)s 0.1')
+    parser.add_argument('--version', action='version',
+                        version='%(prog)s ' + VERSION)
 
     args = parser.parse_args(argv)
 

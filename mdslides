@@ -54,6 +54,45 @@ SHORT_FORMS = (('shorttitle', 'title'),
                # rarely fits, so this one defaults to empty instead
                ('shortinstitute', None))
 
+# Characters that have to be escaped where LaTeX is not wanted, i.e. inside
+# `inline code'.  Prose is passed through untouched; see BeamerRenderer.
+LATEX_ESCAPES = {
+    '\\': '\\textbackslash{}', '{': '\\{', '}': '\\}', '$': '\\$',
+    '&': '\\&', '#': '\\#', '_': '\\_', '%': '\\%',
+    '~': '\\~{}', '^': '\\^{}',
+}
+
+# '\_' in Markdown means a literal underscore, which LaTeX also spells '\_';
+# '\*' on the other hand is just an asterisk.
+LATEX_SPECIALS = set('#$%&_{}')
+
+# Classes recognized in a frame's attribute list, '# Title {.fragile}'.
+FRAME_OPTIONS = ('fragile', 'plain', 'allowframebreaks', 'shrink', 'squeeze',
+                 'noframenumbering', 't', 'b', 'c')
+
+# A trailing attribute list on a heading: '{.fragile}', '{label=intro}'.  The
+# tokens have to look like attributes, so that a title ending in \hlbl{Foo}
+# is not mistaken for one.
+HEADING_ATTRS_RE = re.compile(
+    r'\s*\{((?:\s*[.#][-\w]+|\s*[-\w]+=[^{}\s]+)+)\s*\}\s*$')
+
+# Fence languages that the listings package knows.  It errors out on a
+# language it cannot load, so anything missing here becomes a plain listing.
+# A '[dialect]language' value has to reach LaTeX inside braces, and some
+# languages (Lua) have dialects but no default, so naming one is mandatory.
+# Every value below was checked by compiling it.
+LISTINGS_LANGUAGES = {
+    'c': 'C', 'c++': 'C++', 'cpp': 'C++', 'haskell': 'Haskell',
+    'hs': 'Haskell', 'java': 'Java', 'python': 'Python', 'py': 'Python',
+    'bash': 'bash', 'sh': 'sh', 'shell': 'sh', 'sql': 'SQL', 'tex': 'TeX',
+    'latex': '[LaTeX]TeX', 'lua': '[5.3]Lua', 'perl': 'Perl', 'php': 'PHP',
+    'ruby': 'Ruby', 'prolog': 'Prolog', 'lisp': 'Lisp', 'ml': 'ML',
+    'caml': 'Caml', 'ocaml': '[Objective]Caml', 'r': 'R', 'matlab': 'Matlab',
+    'xml': 'XML', 'html': 'HTML', 'make': 'make', 'makefile': 'make',
+    'llvm': 'LLVM', 'verilog': 'Verilog', 'vhdl': 'VHDL',
+    'fortran': 'Fortran', 'pascal': 'Pascal', 'ada': 'Ada',
+}
+
 # A YAML metadata block, fenced by '---' and closed by '---' or '...'.  Only
 # recognized at the very start of the document, where CommonMark would
 # otherwise see a thematic break.
@@ -193,18 +232,261 @@ metadata block.
 
 
 ###########################################
-def render_slides(ast, opts):
-    """render_slides(marko AST, argparse.Namespace) -> str
+def escape_latex(text):
+    """escape_latex(str) -> str
 
-Renders the body of the presentation: one frame per heading of level
-`opts.slide_level'.
+Escapes the characters LaTeX treats specially.  Only used where the text is
+meant to be taken literally, i.e. inside `inline code'.
 """
-    if opts.dump_ast:
-        for child in ast.children:
-            print(child, file=sys.stderr)
+    return ''.join(LATEX_ESCAPES.get(char, char) for char in text)
 
-    # TODO: replace with a marko Renderer emitting \begin{frame} ... \end{frame}
-    return '% TODO: slides\n'
+
+###########################################
+def heading_level(element):
+    """heading_level(Element) -> int or None
+
+The level of a heading element, or None if it is not a heading.
+"""
+    if element.get_type() in ('Heading', 'SetextHeading'):
+        return element.level
+    return None
+
+
+###########################################
+def split_heading_attributes(title):
+    """split_heading_attributes(str) -> (str, [str])
+
+Splits a trailing attribute list off a frame title, returning the title and
+the frame options it asks for:
+
+    'Algorithm {.fragile}'  ->  ('Algorithm', ['fragile'])
+"""
+    match = HEADING_ATTRS_RE.search(title)
+    if not match:
+        return title, []
+
+    options = []
+    for token in match.group(1).split():
+        if token.startswith('.') and token[1:] in FRAME_OPTIONS:
+            options.append(token[1:])
+        elif '=' in token:
+            options.append(token)
+        elif token.startswith('#'):
+            options.append('label=%s' % token[1:])
+
+    return title[:match.start()].rstrip(), options
+
+
+###########################################
+def contains_verbatim(elements):
+    """contains_verbatim([Element]) -> bool
+
+Whether anything in the subtree is typeset verbatim.  Beamer needs
+[fragile] on a frame that holds a listing, because it has to read the frame
+body twice.
+"""
+    for element in elements:
+        if element.get_type() in ('FencedCode', 'CodeBlock'):
+            return True
+        children = getattr(element, 'children', None)
+        if children and not isinstance(children, str) \
+                and contains_verbatim(children):
+            return True
+    return False
+
+
+###########################################
+class BeamerRenderer(marko.Renderer):
+    """Renders a parsed Markdown document as the body of a Beamer document.
+
+Prose is passed through to LaTeX untouched: whatever marko does not
+recognize as Markdown is assumed to be LaTeX and left alone.  That is what
+lets \\hlbl{...} and \\ldots work in the middle of a sentence.  Escaping only
+happens inside `inline code', where the text is meant to be literal.
+"""
+
+    #: heading level that starts a new frame; set by make_markdown()
+    slide_level = 1
+
+    ####################
+    # document structure
+    ####################
+
+    def render_document(self, element):
+        parts = []
+        for kind, heading, nodes in self.split_slides(element.children):
+            if kind == 'section':
+                title, _ = split_heading_attributes(self.render_children(heading))
+                parts.append('\\section{%s}\n' % title)
+            else:
+                parts.append(self.render_frame(heading, nodes))
+        return '\n'.join(parts)
+
+    def split_slides(self, children):
+        """split_slides([Element]) -> [(str, Element or None, [Element])]
+
+Groups the top level of the document into sections and frames.  A heading
+above the slide level becomes a \\section, one at the slide level starts a
+frame, and a thematic break starts a frame with no title.
+"""
+        slides = []
+        frame = None
+
+        for child in children:
+            level = heading_level(child)
+            if level is not None and level < self.slide_level:
+                slides.append(('section', child, []))
+                frame = None
+            elif level == self.slide_level:
+                frame = []
+                slides.append(('frame', child, frame))
+            elif child.get_type() == 'ThematicBreak':
+                frame = []
+                slides.append(('frame', None, frame))
+            elif frame is None:
+                # material before the first heading: skip the blank lines
+                # left behind by the metadata block, keep anything else
+                if child.get_type() == 'BlankLine':
+                    continue
+                frame = [child]
+                slides.append(('frame', None, frame))
+            else:
+                frame.append(child)
+
+        return slides
+
+    def render_frame(self, heading, nodes):
+        """render_frame(Element or None, [Element]) -> str"""
+        options = []
+        title = ''
+        if heading is not None:
+            title, options = split_heading_attributes(
+                self.render_children(heading))
+        if contains_verbatim(nodes) and 'fragile' not in options:
+            options.insert(0, 'fragile')
+
+        head = '\\begin{frame}'
+        if options:
+            head += '[%s]' % ','.join(options)
+        if title:
+            head += '{%s}' % title
+
+        body = ''.join(self.render(node) for node in nodes)
+        return '%s\n%s\\end{frame}\n' % (head, body)
+
+    ####################
+    # blocks
+    ####################
+
+    def render_paragraph(self, element):
+        text = self.render_children(element)
+        return text + ('\n' if element._tight else '\n\n')
+
+    def render_blank_line(self, element):
+        return ''
+
+    def render_line_break(self, element):
+        return '\n' if element.soft else '\\\\\n'
+
+    def render_list(self, element):
+        environment = 'enumerate' if element.ordered else 'itemize'
+        return '\\begin{%s}\n%s\\end{%s}\n' % (
+            environment, self.render_children(element), environment)
+
+    def render_list_item(self, element):
+        body = self.render_children(element).lstrip()
+        if not body.strip():
+            return '\\item\n'
+        return '\\item %s' % (body if body.endswith('\n') else body + '\n')
+
+    def render_quote(self, element):
+        return '\\begin{quote}\n%s\\end{quote}\n' % self.render_children(element)
+
+    def render_fenced_code(self, element):
+        return self.render_listing(element.lang, element.children[0].children)
+
+    def render_code_block(self, element):
+        return self.render_listing('', element.children[0].children)
+
+    def render_listing(self, language, code):
+        """render_listing(str, str) -> str"""
+        options = []
+        listings_name = LISTINGS_LANGUAGES.get(language.strip().lower())
+        if listings_name:
+            # braces: a '[dialect]language' value would otherwise break the
+            # option parser of listings
+            options.append('language={%s}' % listings_name)
+
+        head = '\\begin{lstlisting}'
+        if options:
+            head += '[%s]' % ','.join(options)
+        if not code.endswith('\n'):
+            code += '\n'
+        return '%s\n%s\\end{lstlisting}\n' % (head, code)
+
+    def render_heading(self, element):
+        # A heading below the slide level.  TODO: \begin{block}{...}, which
+        # needs the following siblings, not just this element.
+        title, _ = split_heading_attributes(self.render_children(element))
+        return '\\textbf{%s}\\par\n' % title
+
+    def render_setext_heading(self, element):
+        return self.render_heading(element)
+
+    def render_thematic_break(self, element):
+        # only reached inside a container; at the top level it starts a frame
+        return '\\medskip\\hrule\\medskip\n'
+
+    def render_html_block(self, element):
+        return ''       # commented-out slides and <!-- notes -->
+
+    def render_link_ref_def(self, element):
+        return ''
+
+    ####################
+    # inline
+    ####################
+
+    def render_raw_text(self, element):
+        return element.children         # straight through to LaTeX
+
+    def render_literal(self, element):
+        char = element.children
+        return '\\' + char if char in LATEX_SPECIALS else char
+
+    def render_emphasis(self, element):
+        return '\\emph{%s}' % self.render_children(element)
+
+    def render_strong_emphasis(self, element):
+        return '\\textbf{%s}' % self.render_children(element)
+
+    def render_code_span(self, element):
+        return '\\texttt{%s}' % escape_latex(element.children)
+
+    def render_link(self, element):
+        return '\\href{%s}{%s}' % (element.dest.replace('%', '\\%'),
+                                   self.render_children(element))
+
+    def render_auto_link(self, element):
+        return '\\url{%s}' % element.dest.replace('%', '\\%')
+
+    def render_image(self, element):
+        return '\\includegraphics{%s}' % element.dest
+
+    def render_inline_html(self, element):
+        return ''
+
+
+###########################################
+def make_markdown(opts):
+    """make_markdown(argparse.Namespace) -> marko.Markdown
+
+marko instantiates the renderer itself, so the options it needs are handed
+over as class attributes of a throwaway subclass.
+"""
+    renderer = type('_BeamerRenderer', (BeamerRenderer,),
+                    {'slide_level': opts.slide_level})
+    return marko.Markdown(renderer=renderer)
 
 
 ###########################################
@@ -219,8 +501,12 @@ Converts the Markdown source `text' into a complete Beamer document.
     # that '-V title=...' also reaches the short title in the footline.
     meta.update(opts.variable)
 
-    ast = marko.Markdown().parse(body)
-    slides = render_slides(ast, opts)
+    markdown = make_markdown(opts)
+    ast = markdown.parse(body)
+    if opts.dump_ast:
+        for child in ast.children:
+            print(child, file=sys.stderr)
+    slides = markdown.render(ast)
 
     variables = build_variables(meta, slides)
     # -V can also set a template variable that is not metadata at all

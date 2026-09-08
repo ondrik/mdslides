@@ -119,6 +119,26 @@ COLUMNS_OPTIONS = ('t', 'b', 'c', 'T', 'onlytextwidth')
 # Div classes that map straight onto a Beamer environment taking a title.
 TITLED_ENVIRONMENTS = ('block', 'alertblock', 'exampleblock')
 
+# An image, with an optional title and an optional attribute list:
+#   ![alt](figure.png "title"){ width=0.8 }
+# Claimed whole, so that the attributes do not reach LaTeX as stray text.
+IMAGE_RE = re.compile(r"""
+    !\[(?P<alt>[^\]]*)\]
+    \([ \t]*<?(?P<dest>[^)\s>]*)>?
+    (?:[ \t]+(?P<quote>["'])(?P<title>.*?)(?P=quote))?
+    [ \t]*\)
+    (?:[ \t]*\{(?P<attrs>[^{}]*)\})?
+""", re.VERBOSE)
+
+# One item of an image's attribute list: 'width=0.8' or a bare flag.
+IMAGE_ATTRIBUTE_RE = re.compile(r"""[ \t]*(?:
+      (?P<key>[-\w]+)[ \t]*=[ \t]*(?P<value>"[^"]*"|'[^']*'|[^\s}]+)
+    | (?P<flag>[-.#\w]+)
+)""", re.VERBOSE)
+
+# Keys measured against the slide, so a bare number is a fraction of it.
+IMAGE_LENGTHS = {'width': 'textwidth', 'height': 'textheight'}
+
 # An environment directive, '@column 0.3' ... '@end column'.  The contents
 # are Markdown; write \begin{...} instead when they should be left alone.
 DIRECTIVE_RE = re.compile(r'[ \t]{0,3}@(?P<name>[A-Za-z][-\w]*)(?P<args>.*)$',
@@ -314,6 +334,34 @@ metadata block.
 
 
 ###########################################
+def parse_image_attributes(text):
+    """parse_image_attributes(str) -> (dict, [str])
+
+Parses an image's attribute list into keyed values and bare flags:
+
+    'width=0.8 clip'  ->  ({'width': '0.8'}, ['clip'])
+
+Pandoc classes and identifiers ('.plain', '#fig') are accepted and
+discarded: \\includegraphics has nowhere to put them.
+"""
+    values, flags = {}, []
+
+    position = 0
+    text = (text or '').strip()
+    while position < len(text):
+        match = IMAGE_ATTRIBUTE_RE.match(text, position)
+        if not match or match.end() == position:
+            break                           # not an attribute list after all
+        position = match.end()
+        if match.group('key'):
+            values[match.group('key')] = match.group('value').strip('\'"')
+        elif not match.group('flag').startswith(('.', '#')):
+            flags.append(match.group('flag'))
+
+    return values, flags
+
+
+###########################################
 def split_directive_arguments(arguments):
     """split_directive_arguments(str) -> (overlay, kind, text)
 
@@ -390,6 +438,30 @@ the search, so a stray '$' cannot run away with the rest of the paragraph.
     priority = 8
     pattern = re.compile(r'(?<!\\)\$((?:[^$\n\\]|\\.)+?)(?<!\\)\$')
     parse_children = False
+
+
+class Graphic(marko.inline.InlineElement):
+    """An image, claimed together with its attribute list.
+
+Left to marko the '{ width=0.8 }' would be parsed separately as text and
+end up in the output as a stray group next to \\includegraphics.
+
+The title, '![](f.png "ignored")', has nowhere to go in LaTeX and is
+dropped, as pandoc drops it; a caption comes from the alt text instead.
+"""
+
+    priority = 8
+    pattern = IMAGE_RE
+    # The whole image is claimed, but only the alt text becomes children, so
+    # a caption may hold Markdown just as a directive's title may.
+    parse_children = True
+    parse_group = 'alt'
+
+    def __init__(self, match):
+        self.alt = match.group('alt')       # the raw text, to test emptiness
+        self.dest = match.group('dest')
+        self.title = match.group('title') or ''
+        self.values, self.flags = parse_image_attributes(match.group('attrs'))
 
 
 class RawLatexInline(marko.inline.InlineElement):
@@ -581,7 +653,7 @@ def markdown_extension():
 The elements above, as an extension to register with marko.
 """
     return marko.helpers.MarkoExtension(
-        elements=[MathDisplay, Math, RawLatexInline,
+        elements=[MathDisplay, Math, Graphic, RawLatexInline,
                   RawLatexEnvironment, RawLatexMacroLine,
                   Directive, StrayDirectiveEnd])
 
@@ -630,6 +702,31 @@ the frame options it asks for:
             options.append('label=%s' % token[1:])
 
     return title[:match.start()].rstrip(), options
+
+
+###########################################
+def lone_graphic(paragraph):
+    """lone_graphic(Paragraph) -> Graphic or None
+
+The one image a paragraph consists of, if that is all it holds apart from
+whitespace.  Such an image is a figure rather than something in a sentence.
+"""
+    found = None
+
+    for child in paragraph.children:
+        kind = child.get_type()
+        if kind == 'Graphic':
+            if found is not None:
+                return None                 # more than one
+            found = child
+        elif kind == 'LineBreak':
+            continue
+        elif kind == 'RawText' and not child.children.strip():
+            continue
+        else:
+            return None                     # prose alongside the image
+
+    return found
 
 
 ###########################################
@@ -740,6 +837,14 @@ frame, and a thematic break starts a frame with no title.
     ####################
 
     def render_paragraph(self, element):
+        # an image alone in a paragraph, with alt text, is a captioned
+        # figure; otherwise the alt text would be dropped on the floor
+        graphic = lone_graphic(element)
+        if graphic is not None and graphic.alt.strip():
+            return ('\\begin{figure}\n\\centering\n%s\n\\caption{%s}\n'
+                    '\\end{figure}\n'
+                    % (self.render(graphic), self.render_children(graphic)))
+
         text = self.render_children(element)
         return text + ('\n' if element._tight else '\n\n')
 
@@ -879,7 +984,22 @@ frame, and a thematic break starts a frame with no title.
         return '\\url{%s}' % element.dest.replace('%', '\\%')
 
     def render_image(self, element):
+        # a reference-style image, '![alt][ref]', which carries no attributes
         return '\\includegraphics{%s}' % element.dest
+
+    def render_graphic(self, element):
+        options = []
+        for key, value in element.values.items():
+            relative_to = IMAGE_LENGTHS.get(key)
+            if relative_to and BARE_NUMBER_RE.match(value):
+                value = '%s\\%s' % (value, relative_to)
+            options.append('%s=%s' % (key, value))
+        options.extend(element.flags)
+
+        graphic = '\\includegraphics'
+        if options:
+            graphic += '[%s]' % ','.join(options)
+        return graphic + '{%s}' % element.dest
 
     def render_inline_html(self, element):
         return ''

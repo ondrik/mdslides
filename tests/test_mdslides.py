@@ -7,10 +7,13 @@
 
 import os
 import re
+import shutil
 import string
+import struct
 import subprocess
 import sys
 import textwrap
+import zlib
 
 import pytest
 
@@ -434,6 +437,81 @@ def test_render_link(render):
 
 def test_render_image(render):
     assert '\\includegraphics{fig.png}' in render('# S\n\n![](fig.png)\n')
+
+
+###########################################
+# Images and their attributes
+###########################################
+
+@pytest.mark.parametrize('attributes, expected', [
+    pytest.param('{width=0.8}', '[width=0.8\\textwidth]',
+                 id='bare-number-is-a-fraction'),
+    pytest.param('{height=0.5}', '[height=0.5\\textheight]',
+                 id='height-against-the-slide'),
+    pytest.param('{width=4cm}', '[width=4cm]', id='a-length-is-kept'),
+    pytest.param('{width=0.5 height=0.25}',
+                 '[width=0.5\\textwidth,height=0.25\\textheight]',
+                 id='two-keys-in-order'),
+    pytest.param('{scale=0.5}', '[scale=0.5]', id='other-keys-pass-through'),
+    pytest.param('{clip}', '[clip]', id='bare-flag'),
+    pytest.param('{.plain #fig width=0.3}', '[width=0.3\\textwidth]',
+                 id='classes-and-identifiers-are-dropped'),
+    pytest.param('', '', id='no-attributes'),
+])
+def test_image_attributes(render, attributes, expected):
+    body = render('# S\n\n![](fig.png)%s\n' % attributes)
+    assert '\\includegraphics%s{fig.png}' % expected in body
+
+
+def test_image_attributes_do_not_leak_as_text(render):
+    """They used to arrive in LaTeX as a stray group next to the graphic."""
+    body = render('# S\n\n![](fig.png){width=0.8}\n')
+    assert 'width=0.8}' not in body.replace('width=0.8\\textwidth]', '')
+    assert '{ width' not in body
+
+
+def test_image_title_is_dropped(render):
+    """LaTeX has nowhere to put it; a caption comes from the alt text."""
+    body = render('# S\n\n![](fig.png "KLEE results"){width=1.0}\n')
+    assert 'KLEE results' not in body
+    assert '\\includegraphics[width=1.0\\textwidth]{fig.png}' in body
+
+
+###########################################
+# Images: implicit figures
+###########################################
+
+def test_image_alone_with_alt_text_is_a_captioned_figure(render):
+    body = render('# S\n\n![KLEE results](fig.png){width=0.8}\n')
+    assert '\\begin{figure}' in body
+    assert '\\centering' in body
+    assert '\\caption{KLEE results}' in body
+    assert '\\end{figure}' in body
+
+
+def test_image_caption_may_hold_markdown(render):
+    """Consistent with a directive's title."""
+    body = render('# S\n\n![A **bold** caption with $x_1$](fig.png)\n')
+    assert '\\caption{A \\textbf{bold} caption with $x_1$}' in body
+
+
+def test_image_alone_without_alt_text_is_not_a_figure(render):
+    """This is the deck's case; wrapping it would change the layout."""
+    body = render('# S\n\n![](fig.png){width=0.8}\n')
+    assert '\\begin{figure}' not in body
+    assert '\\includegraphics[width=0.8\\textwidth]{fig.png}' in body
+
+
+def test_image_in_a_sentence_is_not_a_figure(render):
+    body = render('# S\n\nsee ![alt](fig.png) here\n')
+    assert '\\begin{figure}' not in body
+    assert 'see \\includegraphics{fig.png} here' in body
+
+
+def test_two_images_in_a_paragraph_are_not_a_figure(render):
+    body = render('# S\n\n![one](a.png) ![two](b.png)\n')
+    assert '\\begin{figure}' not in body
+    assert body.count('\\includegraphics') == 2
 
 
 ###########################################
@@ -994,6 +1072,124 @@ def test_deck_converts_to_a_document(mdslides, deck, template, opts):
     assert '\\documentclass' in result
     assert str(meta['aspectratio']) in result
     assert meta['title'] in result
+
+
+###########################################
+# Does the output actually compile?
+#
+# The unit tests above check what we emit; only LaTeX can say whether it is
+# valid. Skipped where pdflatex is not installed, so the suite still needs
+# nothing but the standard library.
+###########################################
+
+pdflatex_needed = pytest.mark.skipif(shutil.which('pdflatex') is None,
+                                     reason='pdflatex is not installed')
+
+def png_bytes(size=8):
+    """A valid PNG, so that a figure has something real to include."""
+    def chunk(kind, data):
+        body = kind + data
+        return (struct.pack('>I', len(data)) + body
+                + struct.pack('>I', zlib.crc32(body)))
+
+    header = struct.pack('>IIBBBBB', size, size, 8, 2, 0, 0, 0)
+    rows = b''.join(b'\x00' + bytes([200, 120, 60]) * size
+                    for _ in range(size))
+    return (b'\x89PNG\r\n\x1a\n'
+            + chunk(b'IHDR', header)
+            + chunk(b'IDAT', zlib.compress(rows))
+            + chunk(b'IEND', b''))
+
+
+def compile_latex(directory, text, script):
+    """Run mdslides on `text' and pdflatex on the result."""
+    (directory / 'f.png').write_bytes(png_bytes())
+    # The deck's header-includes pulls in the author's own style files,
+    # which are not in the repository. Stand-ins let the test judge our
+    # LaTeX rather than whether those files happen to be present.
+    for stub, macro in (('macros.tex', 'hlbl'), ('stylesheet.tex', 'hlrd')):
+        (directory / stub).write_text(
+            '\\providecommand{\\%s}[1]{\\textbf{#1}}\n' % macro,
+            encoding='utf-8')
+    source = directory / 'deck.md'
+    source.write_text(text, encoding='utf-8')
+    done = run(script, str(source), '-o', str(directory / 'deck.tex'))
+    assert done.returncode == 0, done.stderr
+
+    done = subprocess.run(
+        ['pdflatex', '-interaction=nonstopmode', 'deck.tex'],
+        cwd=directory, capture_output=True, encoding='utf-8', errors='replace')
+    log = (directory / 'deck.log').read_text(encoding='utf-8', errors='replace')
+    return done, log
+
+
+@pdflatex_needed
+def test_compiles_everything_we_emit(tmp_path, script):
+    """One document exercising every construct the renderer knows."""
+    document = doc("""
+        ---
+        title: "Compile test"
+        author: "Ondřej Lengál"
+        theme: "Madrid"
+        aspectratio: 169
+        header-includes: |
+          \\providecommand{\\hlbl}[1]{\\textbf{#1}}
+        ---
+
+        # Lists and text
+        * **bold**, *emphasis*, `a_b` and \\hlbl{a macro}
+        * maths: $pc_1 \\land pc_2$ and $\\mathbb{T}$
+        \\pausex
+        * a~non-breaking space
+
+        # A listing {.fragile}
+        ```C
+        if (input[i] == 'B') { ++counter; }
+        ```
+
+        # Columns
+        @columns
+        @column 0.4
+        * left
+        @column 0.6
+        \\begin{tabular}{|c|c|}
+          \\hline
+          $a$ & $b$ \\\\
+          \\hline
+        \\end{tabular}
+        @end columns
+
+        # Environments
+        @theorem Pumping lemma
+        For every **regular** language $L$ ...
+        @end
+
+        @block Results **so far**
+        Fine.
+        @end
+
+        # A figure
+        ![A **captioned** figure](f.png){width=0.4}
+
+        # Display maths
+        $$ x = y $$
+    """)
+    done, log = compile_latex(tmp_path, document, script)
+    errors = [line for line in log.splitlines() if line.startswith('!')]
+    assert errors == [], '\n'.join(errors)
+    assert (tmp_path / 'deck.pdf').exists()
+
+
+@pdflatex_needed
+def test_the_deck_compiles(tmp_path, script, deck, deck_path):
+    """The real presentation, end to end."""
+    # the deck includes klee.png, which is not in the repository
+    text = deck.replace('klee.png', 'f.png')
+    done, log = compile_latex(tmp_path, text, script)
+    errors = [line for line in log.splitlines() if line.startswith('!')]
+    assert errors == [], '\n'.join(errors)
+    assert (tmp_path / 'deck.pdf').exists()
+    assert re.search(r'Output written .* \((\d+) pages', log)
 
 
 ###########################################

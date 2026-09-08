@@ -586,6 +586,182 @@ def test_macro_line_is_not_a_paragraph_of_prose(render):
 
 
 ###########################################
+# Environment directives: '@name ... @end'
+###########################################
+
+def test_directive_columns(render):
+    body = render('# S\n\n@columns\n@column 0.3\nleft\n\n@column 0.7\nright\n'
+                  '@end columns\n')
+    assert '\\begin{columns}' in body
+    assert body.count('\\begin{column}') == 2
+    assert '\\begin{column}{0.3\\textwidth}' in body
+    assert '\\begin{column}{0.7\\textwidth}' in body
+    assert body.count('\\end{column}') == 2
+    assert '\\end{columns}' in body
+
+
+def test_directive_body_is_markdown(render):
+    """The point of '@' over \\begin: the contents are still Markdown."""
+    body = render('# S\n\n@column 0.5\n* **bold** item\n* $pc_1$\n@end\n')
+    assert '\\begin{itemize}' in body
+    assert '\\textbf{bold}' in body
+    assert '$pc_1$' in body
+
+
+def test_directive_begin_stays_verbatim(render):
+    """...and the contents of \\begin{...} are still not."""
+    body = render('# S\n\n\\begin{align}\n* **not** a list\n\\end{align}\n')
+    assert '* **not** a list' in body
+    assert '\\textbf' not in body
+
+
+@pytest.mark.parametrize('source, expected', [
+    pytest.param('0.3', '{0.3\\textwidth}', id='bare-number-is-a-fraction'),
+    pytest.param('.5', '{.5\\textwidth}', id='leading-dot'),
+    pytest.param('4cm', '{4cm}', id='a-length-is-passed-through'),
+    pytest.param('{0.3\\textwidth}', '{0.3\\textwidth}', id='explicit-braces'),
+])
+def test_directive_width(render, source, expected):
+    body = render('# S\n\n@column %s\ntext\n@end\n' % source)
+    assert '\\begin{column}%s' % expected in body
+
+
+@pytest.mark.parametrize('name, expected', [
+    pytest.param('theorem', '\\begin{theorem}[Pumping lemma]', id='bracket'),
+    pytest.param('lemma', '\\begin{lemma}[Pumping lemma]', id='another-bracket'),
+    pytest.param('block', '\\begin{block}{Pumping lemma}', id='brace'),
+    pytest.param('tcolorbox', '\\begin{tcolorbox}{Pumping lemma}',
+                 id='unknown-defaults-to-brace'),
+])
+def test_directive_titles(render, name, expected):
+    """theorem-likes take [title]; block-likes and the rest take {title}."""
+    body = render('# S\n\n@%s Pumping lemma\ntext\n@end\n' % name)
+    assert expected in body
+
+
+def test_directive_title_may_hold_markdown(render):
+    body = render('# S\n\n@block Results **so far**\ntext\n@end\n')
+    assert '\\begin{block}{Results \\textbf{so far}}' in body
+
+
+def test_directive_latex_arguments_are_not_touched(render):
+    body = render('# S\n\n@block{Results **so far**}\ntext\n@end\n')
+    assert '\\begin{block}{Results **so far**}' in body
+
+
+@pytest.mark.parametrize('arguments, expected', [
+    pytest.param('[t]{0.4\\textwidth}', '\\begin{minipage}[t]{0.4\\textwidth}',
+                 id='two-arguments-in-order'),
+    pytest.param('', '\\begin{minipage}\n', id='no-arguments'),
+])
+def test_directive_argument_passthrough(render, arguments, expected):
+    body = render('# S\n\n@minipage%s\ntext\n@end\n' % arguments)
+    assert expected in body
+
+
+def test_directive_unknown_environment_needs_no_table_entry(render):
+    body = render('# S\n\n@tcolorbox[colback=red]\n* item\n@end\n')
+    assert '\\begin{tcolorbox}[colback=red]' in body
+    assert '\\begin{itemize}' in body
+
+
+@pytest.mark.parametrize('source, expected', [
+    pytest.param('@block<2-> Later', '\\begin{block}<2->{Later}',
+                 id='before-a-friendly-title'),
+    pytest.param('@block<2->{Later}', '\\begin{block}<2->{Later}',
+                 id='before-latex-arguments'),
+    pytest.param('@block<2->', '\\begin{block}<2->\n', id='on-its-own'),
+])
+def test_directive_overlay(render, source, expected):
+    assert expected in render('# S\n\n%s\ntext\n@end\n' % source)
+
+
+def test_directive_command_form(render):
+    """beamer spells a note as a macro, not an environment."""
+    body = render('# S\n\n@note\nRemember **this**.\n@end\n')
+    assert '\\note{' in body
+    assert '\\textbf{this}' in body
+    assert '\\begin{note}' not in body
+
+
+###########################################
+# Directives: how they close
+###########################################
+
+def test_directive_sibling_closes_the_previous_one(render):
+    """A row of columns needs no @end between them."""
+    body = render('# S\n\n@columns\n@column 0.5\na\n@column 0.5\nb\n@end\n')
+    assert body.count('\\begin{column}') == 2
+    assert body.count('\\end{column}') == 2
+
+
+def test_directive_heading_closes_it(render):
+    """No environment may reach past the end of its frame."""
+    body = render('# One\n\n@column 0.5\ntext\n\n# Two\n\nmore\n')
+    assert '\\end{column}' in body
+    assert body.count('\\begin{frame}') == 2
+    frames = body.split('\\begin{frame}')
+    assert '\\end{column}' in frames[1]
+    assert 'column' not in frames[2]
+
+
+def test_directive_bare_end(render):
+    body = render('# S\n\n@block T\ntext\n@end\n\nafter\n')
+    assert '\\end{block}' in body
+    assert 'after' in body
+
+
+def test_directive_named_end(render):
+    body = render('# S\n\n@block T\ntext\n@end block\n\nafter\n')
+    assert '\\end{block}' in body
+    assert 'after' in body
+
+
+def test_directive_named_end_closes_what_is_open_inside_it(render):
+    """'@end columns' closes a dangling column, the way </ul> does in HTML."""
+    body = render('# S\n\n@columns\n@column 0.5\na\n@end columns\nafter\n')
+    assert body.index('\\end{column}') < body.index('\\end{columns}')
+    assert 'after' in body
+
+
+def test_directive_same_name_nests_when_not_a_sibling(render):
+    body = render('# S\n\n@block Outer\n@block Inner\ntext\n@end\n@end\n')
+    assert body.count('\\begin{block}') == 2
+    assert body.count('\\end{block}') == 2
+
+
+def test_directive_stray_end_is_dropped_with_a_warning(render, capsys):
+    body = render('# S\n\ntext\n@end\n')
+    assert '@end' not in body
+    assert 'nothing open' in capsys.readouterr().err
+
+
+###########################################
+# Directives: what is not a directive
+###########################################
+
+@pytest.mark.parametrize('text', [
+    pytest.param('write to me @home tonight', id='mid-sentence'),
+    pytest.param('@2x scaling', id='name-must-start-with-a-letter'),
+])
+def test_directive_not_recognized_in_prose(render, text):
+    assert text in render('# S\n\n%s\n' % text)
+
+
+def test_directive_inside_a_listing_is_left_alone(render):
+    """The deck's algorithm slide has lines starting with '@'."""
+    body = render('# S\n\n```C\n@end\n@column 0.3\n```\n')
+    assert '@end' in body
+    assert '@column 0.3' in body
+    assert '\\begin{column}' not in body
+
+
+def test_directive_listing_inside_makes_the_frame_fragile(render):
+    body = render('# S\n\n@column 0.5\n\n```C\nx\n```\n@end\n')
+    assert '[fragile]' in body
+
+
+###########################################
 # The renderer: the committed deck
 ###########################################
 

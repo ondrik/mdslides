@@ -96,6 +96,68 @@ LISTINGS_LANGUAGES = {
     'fortran': 'Fortran', 'pascal': 'Pascal', 'ada': 'Ada',
 }
 
+# A fenced div, ':::' or more colons.  With an info string it opens one, on
+# its own it closes one:  '::: { .column width=30% }' ... ':::'
+DIV_FENCE_RE = re.compile(r'(:{3,})[ \t]*(.*?)[ \t]*$', re.MULTILINE)
+
+# A code fence, so that a ':::' inside a listing is not mistaken for a div.
+CODE_FENCE_RE = re.compile(r'[ \t]*(`{3,}|~{3,})')
+
+# One item of an attribute list: '.class', '#identifier', 'key=value', or a
+# bare word, which pandoc also treats as a class so that ':::  columns'
+# works as shorthand for '::: {.columns}'.
+ATTRIBUTE_RE = re.compile(r"""\s*(?:
+      \.(?P<cls>[-\w:]+)
+    | \#(?P<id>[-\w:]+)
+    | (?P<key>[-\w:]+)[ \t]*=[ \t]*(?P<value>"[^"]*"|'[^']*'|[^\s}]+)
+    | (?P<bare>[-\w:]+)
+)""", re.VERBOSE)
+
+# Alignment options accepted on \begin{columns}.
+COLUMNS_OPTIONS = ('t', 'b', 'c', 'T', 'onlytextwidth')
+
+# Div classes that map straight onto a Beamer environment taking a title.
+TITLED_ENVIRONMENTS = ('block', 'alertblock', 'exampleblock')
+
+# An environment directive, '@column 0.3' ... '@end column'.  The contents
+# are Markdown; write \begin{...} instead when they should be left alone.
+DIRECTIVE_RE = re.compile(r'[ \t]{0,3}@(?P<name>[A-Za-z][-\w]*)(?P<args>.*)$',
+                          re.MULTILINE)
+DIRECTIVE_END_RE = re.compile(
+    r'[ \t]{0,3}@end(?:[ \t]+(?P<name>[A-Za-z][-\w]*))?[ \t]*$', re.MULTILINE)
+
+# A beamer overlay specification, '<2->', allowed in front of the arguments.
+OVERLAY_RE = re.compile(r'(<[^>\n]*>)[ \t]*')
+
+# An ATX heading, which closes any directive still open: a frame boundary is
+# as far as an environment can reach.
+HEADING_LINE_RE = re.compile(r'[ \t]{0,3}#{1,6}(?:[ \t]|$)')
+
+# A bare number is a fraction of \textwidth, so '@column 0.3' is enough.
+BARE_NUMBER_RE = re.compile(r'\d*\.?\d+$')
+
+# Sugar, not semantics: an unlisted directive still works, you just write
+# the brackets yourself.  A friendly argument becomes a width for these,
+WIDTH_DIRECTIVES = frozenset(('column', 'minipage'))
+
+# an optional [title] for these, since that is what theorem-likes take,
+BRACKET_TITLE_DIRECTIVES = frozenset("""
+    theorem lemma corollary definition example proof remark proposition
+    claim fact observation conjecture
+""".split())
+
+# and a mandatory {title} for anything else, which is what block-likes want.
+
+# Directives that are a command rather than an environment: '@note' becomes
+# \note{...}, so Markdown can be written inside something beamer spells as a
+# macro argument.
+COMMAND_DIRECTIVES = frozenset(('note', 'alert', 'only', 'uncover', 'visible',
+                                'invisible'))
+
+# Directives where repeating the name closes the previous one instead of
+# nesting inside it, so a row of columns needs no @end between them.
+SIBLING_DIRECTIVES = frozenset(('column',))
+
 # A LaTeX macro call: \name, \name*, \name[opt]{arg}, \name{a}{b}.  Regular
 # expressions cannot count, so brace nesting is spelled out to three levels,
 # which covers anything written by hand.
@@ -252,6 +314,62 @@ metadata block.
 
 
 ###########################################
+def split_directive_arguments(arguments):
+    """split_directive_arguments(str) -> (overlay, kind, text)
+
+Splits a directive's arguments into a beamer overlay specification and the
+rest, and says how the rest is to be read:
+
+    ''                  ->  ('',      'none',     '')
+    '<2-> Results'      ->  ('<2->',  'friendly', 'Results')
+    '[Pumping lemma]'   ->  ('',      'latex',    '[Pumping lemma]')
+    '0.3'               ->  ('',      'friendly', '0.3')
+
+'latex' arguments are handed to LaTeX exactly as written, which is what
+makes an environment we have never heard of usable; 'friendly' ones are a
+width or a title, and get interpreted.
+"""
+    arguments = arguments.strip()
+
+    overlay = ''
+    match = OVERLAY_RE.match(arguments)
+    if match:
+        overlay = match.group(1)
+        arguments = arguments[match.end():].strip()
+
+    if not arguments:
+        return overlay, 'none', ''
+    if arguments[0] in '[{<':
+        return overlay, 'latex', arguments
+    return overlay, 'friendly', arguments
+
+
+###########################################
+def parse_one_block(source):
+    """parse_one_block(Source) -> BlockElement or None
+
+Parses a single block, the way marko's own parse_source() does one turn of
+its loop.  A container that ends at a marker of its own cannot use
+parse_source(), which keeps going until no element matches at all.
+"""
+    elements = sorted(
+        (element for element in source.parser.block_elements.values()
+         if not element.virtual),
+        key=lambda element: element.priority, reverse=True)
+
+    for element in elements:
+        if element.match(source):
+            result = element.parse(source)
+            if not hasattr(result, 'priority'):
+                # parse() may return the arguments for the constructor
+                # rather than the element itself
+                result = element(result)
+            return result
+
+    return None
+
+
+###########################################
 class MathDisplay(marko.inline.InlineElement):
     """Display maths, '$$ ... $$'."""
 
@@ -361,6 +479,101 @@ follows, as a lazy continuation line, rather than tearing the list in two.
         return line.strip()
 
 
+class Directive(marko.block.BlockElement):
+    """An environment written as '@name arguments', closed by '@end'.
+
+The body is parsed as Markdown, which is the whole point of having this
+alongside \\begin{...}: the two syntaxes say what should happen to the
+contents, so no list of environment names has to decide it.
+
+    @column 0.3                 @theorem[Pumping lemma]
+    * **Markdown** in here      For every **regular** language ...
+    @column 0.7                 @end
+    ...
+    @end columns
+
+Three things close a directive: an '@end', optionally naming what it
+closes; the same name again, for the directives that come in rows, so a
+column needs no '@end' before the next one; and a heading, since no
+environment should reach past the end of its frame.  An '@end name' closes
+anything still open inside it, the way </ul> does in HTML.
+"""
+
+    priority = 9
+    breaks_paragraph = True
+
+    def __init__(self, info):
+        (self.name, self.overlay, self.kind, self.text,
+         self.title, self.children) = info
+
+    @classmethod
+    def match(cls, source):
+        if source.expect_re(DIRECTIVE_END_RE):
+            return None                     # StrayDirectiveEnd's business
+        return source.expect_re(DIRECTIVE_RE)
+
+    @classmethod
+    def parse(cls, source):
+        match = source.expect_re(DIRECTIVE_RE)
+        name = match.group('name')
+        overlay, kind, text = split_directive_arguments(match.group('args'))
+        source.next_line()
+        source.consume()
+
+        title = []
+        if kind == 'friendly' and name not in WIDTH_DIRECTIVES:
+            # a title may hold Markdown, '@block Results **so far**'
+            title = source.parser.parse(text).children
+
+        children = []
+        while not source.exhausted:
+            line = source.next_line()
+            if line is None:
+                break                       # left the enclosing container
+
+            end = DIRECTIVE_END_RE.match(line)
+            if end:
+                if end.group('name') in (None, name):
+                    source.consume()        # ours; a bare @end closes here
+                break                       # otherwise an enclosing one's
+
+            sibling = DIRECTIVE_RE.match(line)
+            if sibling and name in SIBLING_DIRECTIVES \
+                    and sibling.group('name') == name:
+                break                       # closed by the next of its kind
+
+            if HEADING_LINE_RE.match(line):
+                break                       # closed by the frame boundary
+
+            block = parse_one_block(source)
+            if block is None:
+                break
+            children.append(block)
+
+        return name, overlay, kind, text, title, children
+
+
+class StrayDirectiveEnd(marko.block.BlockElement):
+    """An '@end' with nothing open; reported and dropped rather than printed."""
+
+    priority = 9
+    breaks_paragraph = True
+
+    def __init__(self, text):
+        self.text = text
+        self.children = []
+
+    @classmethod
+    def match(cls, source):
+        return source.expect_re(DIRECTIVE_END_RE)
+
+    @classmethod
+    def parse(cls, source):
+        line = source.next_line()
+        source.consume()
+        return line.strip()
+
+
 ###########################################
 def markdown_extension():
     """markdown_extension() -> marko.helpers.MarkoExtension
@@ -369,7 +582,8 @@ The elements above, as an extension to register with marko.
 """
     return marko.helpers.MarkoExtension(
         elements=[MathDisplay, Math, RawLatexInline,
-                  RawLatexEnvironment, RawLatexMacroLine])
+                  RawLatexEnvironment, RawLatexMacroLine,
+                  Directive, StrayDirectiveEnd])
 
 
 ###########################################
@@ -583,6 +797,38 @@ frame, and a thematic break starts a frame with no title.
     def render_thematic_break(self, element):
         # only reached inside a container; at the top level it starts a frame
         return '\\medskip\\hrule\\medskip\n'
+
+    def render_directive(self, element):
+        body = self.render_children(element)
+        arguments = self.directive_arguments(element)
+
+        if element.name in COMMAND_DIRECTIVES:
+            return '\\%s%s{%%\n%s}\n' % (element.name, element.overlay, body)
+
+        return '\\begin{%s}%s%s\n%s\\end{%s}\n' % (
+            element.name, element.overlay, arguments, body, element.name)
+
+    def directive_arguments(self, element):
+        """directive_arguments(Directive) -> str"""
+        if element.kind == 'latex':
+            return element.text             # exactly as written
+        if element.kind == 'none':
+            return ''
+
+        if element.name in WIDTH_DIRECTIVES:
+            if BARE_NUMBER_RE.match(element.text):
+                return '{%s\\textwidth}' % element.text
+            return '{%s}' % element.text    # a length such as 4cm
+
+        title = ''.join(self.render(block) for block in element.title).strip()
+        if element.name in BRACKET_TITLE_DIRECTIVES:
+            return '[%s]' % title
+        return '{%s}' % title
+
+    def render_stray_directive_end(self, element):
+        print("%s: warning: '%s' with nothing open" % (PROG, element.text),
+              file=sys.stderr)
+        return ''
 
     def render_raw_latex_environment(self, element):
         return element.text + '\n'

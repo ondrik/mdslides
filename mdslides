@@ -44,6 +44,7 @@ TEMPLATE_DEFAULTS = {
     'institute': '',
     'date': '',
     'headerincludes': '',
+    'titlepage': '',
 }
 
 # Metadata that is a list of people or places, rather than a block of text.
@@ -289,6 +290,22 @@ authors can be handled the same way.
     return [value]
 
 
+def as_bool(value, default=False):
+    """as_bool(object, bool) -> bool
+
+Reads a metadata flag.  YAML gives us a real boolean, but -V on the command
+line can only give a string, so 'false' and friends have to be understood
+rather than taken as a non-empty and therefore true string.
+"""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() not in ('', 'false', 'no', 'off', '0')
+    return bool(value)
+
+
 ###########################################
 def build_variables(meta, slides):
     """build_variables(dict, str) -> dict
@@ -328,6 +345,15 @@ metadata block.
     for short, long in SHORT_FORMS:
         if not variables.get(short):
             variables[short] = variables[long] if long else ''
+
+    # A title page, unless the deck has no title to put on one or asks not
+    # to have it.  The template cannot decide this itself: string.Template
+    # has no conditionals, so the choice is made here and the variable is
+    # either the frame or nothing at all.
+    if as_bool(meta.get('titlepage'), bool(variables['title'])):
+        variables['titlepage'] = '\\frame{\\titlepage}'
+    else:
+        variables['titlepage'] = ''
 
     variables['slides'] = slides
     return variables

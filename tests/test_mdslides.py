@@ -969,6 +969,77 @@ def test_variables_explicit_short_form_wins(mdslides, key):
 
 
 ###########################################
+# as_bool() -- metadata flags, which -V can only give us as strings
+###########################################
+
+@pytest.mark.parametrize('value, expected', [
+    pytest.param(True, True, id='yaml-true'),
+    pytest.param(False, False, id='yaml-false'),
+    pytest.param('true', True, id='string-true'),
+    pytest.param('false', False, id='string-false'),
+    pytest.param('no', False, id='no'),
+    pytest.param('off', False, id='off'),
+    pytest.param('0', False, id='zero'),
+    pytest.param('', False, id='empty'),
+    pytest.param('  FALSE  ', False, id='case-and-space'),
+    pytest.param('yes', True, id='yes'),
+    pytest.param('1', True, id='one'),
+])
+def test_as_bool(mdslides, value, expected):
+    assert mdslides.as_bool(value) is expected
+
+
+@pytest.mark.parametrize('default', [True, False])
+def test_as_bool_default_for_absent(mdslides, default):
+    assert mdslides.as_bool(None, default) is default
+
+
+###########################################
+# The title page
+###########################################
+
+TITLEPAGE = '\\frame{\\titlepage}'
+
+
+def test_titlepage_is_added_when_there_is_a_title(mdslides):
+    assert mdslides.build_variables({'title': 'T'}, '')['titlepage'] == TITLEPAGE
+
+
+def test_titlepage_is_absent_without_a_title(mdslides):
+    """Nothing to put on one, so an empty title frame is not produced."""
+    assert mdslides.build_variables({}, '')['titlepage'] == ''
+
+
+@pytest.mark.parametrize('value', [False, 'false', 'no', '0'])
+def test_titlepage_can_be_switched_off(mdslides, value):
+    variables = mdslides.build_variables({'title': 'T', 'titlepage': value}, '')
+    assert variables['titlepage'] == ''
+
+
+def test_titlepage_can_be_forced_without_a_title(mdslides):
+    variables = mdslides.build_variables({'titlepage': True}, '')
+    assert variables['titlepage'] == TITLEPAGE
+
+
+def test_titlepage_reaches_the_document(convert):
+    result = convert('---\ntitle: T\nauthor: A\n---\n\n# Slide\n')
+    assert TITLEPAGE in result
+    assert result.index(TITLEPAGE) < result.index('\\begin{frame}')
+
+
+def test_titlepage_switched_off_from_the_command_line(convert):
+    """-V gives a string, which must not be read as a non-empty truth."""
+    result = convert('---\ntitle: T\n---\n\n# Slide\n',
+                     variable={'titlepage': 'false'})
+    assert TITLEPAGE not in result
+
+
+def test_titlepage_in_the_deck(mdslides, deck, template, opts):
+    result = mdslides.convert(deck, template, opts())
+    assert TITLEPAGE in result
+
+
+###########################################
 # convert() -- the whole pipeline, with the template applied
 ###########################################
 

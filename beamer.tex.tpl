@@ -74,6 +74,9 @@ $headerincludes
 % Translation of some slides only: [label=current] in the frame header.
 % \includeonlyframes{current}
 
+%% Empty when the deck has no title, or sets 'titlepage: false'.
+$titlepage
+
 $slides
 
 

@@ -223,9 +223,8 @@ Let $\varphi$ be a formula obtained by substituting (symbolic) values of variabl
 
 # Example of symbolic execution
 
-:::::: columns
-
-::: { .column width=30% }
+@columns
+@column 0.3
 ```C
 int power(x, y)
 {
@@ -243,10 +242,8 @@ int power(x, y)
 6:  return z
 }
 ```
-:::
-<!-- column -->
 
-::: { .column width=70% }
+@column 0.7
 \newlength{\rowfill}
 \setlength{\rowfill}{1mm}
 \begin{tabularx}{\textwidth}{|c|c|c|c|c|X|}
@@ -280,11 +277,7 @@ int power(x, y)
   &&&&&\\[\rowfill]
   \hline
 \end{tabularx}
-:::
-<!-- column -->
-
-::::::
-<!-- columns -->
+@end columns
 
 
 # Symbolic execution --- high level algorithm {.fragile}
@@ -443,23 +436,18 @@ given by the implementation of $workSet.getAndRemove$`()`
 
 
 # Tools
-:::::: columns
-
-::: { .column width=55% }
+@columns
+@column 0.55
 * **\hlbl{KLEE}**: symbolic execution of LLVM bitcode
 * **\hlbl{Pex}**: symbolic execution for .NET
 * **\hlbl{CREST}**: concolic testing of $\mathtt{C}$ programs
 * **\hlbl{SAGE}**: targets file parsers (e.g., `.doc`, `.jpeg`)
   * used daily in Microsoft Win, Office, $\ldots$
   * found 100s of bugs in 100s of apps
-:::
 
-::: { .column width=45% }
-![](klee.png "KLEE results"){ width=100% }
-:::
-
-::::::
-<!-- columns -->
+@column 0.45
+![](klee.png "KLEE results"){ width=1.0 }
+@end columns
 
 
 # Tools

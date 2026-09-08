@@ -80,6 +80,13 @@ FRAME_OPTIONS = ('fragile', 'plain', 'allowframebreaks', 'shrink', 'squeeze',
 HEADING_ATTRS_RE = re.compile(
     r'\s*\{((?:\s*[.#][-\w]+|\s*[-\w]+=[^{}\s]+)+)\s*\}\s*$')
 
+# Fence languages that mean "this is listings input, not a language": the
+# body is handed to lstlisting as it stands, with escapechar switched on so
+# that '@$x_1$@' typesets as maths instead of printing as itself.  Only
+# these fences get it, since a C snippet is free to contain an '@'.
+RAW_LISTING_LANGUAGES = ('lstlisting', 'listings')
+LISTINGS_ESCAPECHAR = '@'
+
 # Fence languages that the listings package knows.  It errors out on a
 # language it cannot load, so anything missing here becomes a plain listing.
 # A '[dialect]language' value has to reach LaTeX inside braces, and some
@@ -792,6 +799,9 @@ happens inside `inline code', where the text is meant to be literal.
     #: heading level that starts a new frame; set by make_markdown()
     slide_level = 1
 
+    #: escape character for ```lstlisting fences; set by make_markdown()
+    escapechar = LISTINGS_ESCAPECHAR
+
     ####################
     # document structure
     ####################
@@ -903,11 +913,16 @@ frame, and a thematic break starts a frame with no title.
     def render_listing(self, language, code):
         """render_listing(str, str) -> str"""
         options = []
-        listings_name = LISTINGS_LANGUAGES.get(language.strip().lower())
-        if listings_name:
+        name = (language or '').strip().lower()
+
+        if name in RAW_LISTING_LANGUAGES:
+            # the author is writing listings input, so let the escapes work
+            if self.escapechar:
+                options.append('escapechar=%s' % self.escapechar)
+        elif LISTINGS_LANGUAGES.get(name):
             # braces: a '[dialect]language' value would otherwise break the
             # option parser of listings
-            options.append('language={%s}' % listings_name)
+            options.append('language={%s}' % LISTINGS_LANGUAGES[name])
 
         head = '\\begin{lstlisting}'
         if options:
@@ -1039,7 +1054,8 @@ marko instantiates the renderer itself, so the options it needs are handed
 over as class attributes of a throwaway subclass.
 """
     renderer = type('_BeamerRenderer', (BeamerRenderer,),
-                    {'slide_level': opts.slide_level})
+                    {'slide_level': opts.slide_level,
+                     'escapechar': opts.escapechar})
     return marko.Markdown(renderer=renderer,
                           extensions=[markdown_extension()])
 
@@ -1094,6 +1110,10 @@ def parse_args(argv=None):
                         metavar='N',
                         help="heading level that starts a new frame "
                              "(default: %(default)s)")
+    parser.add_argument('--escapechar', default=LISTINGS_ESCAPECHAR,
+                        metavar='CHAR',
+                        help="escape character inside ```lstlisting blocks, "
+                             "empty to switch it off (default: %(default)s)")
     parser.add_argument('-d', '--dump-ast', action='store_true',
                         help="dump the parsed Markdown tree to stderr")
     parser.add_argument('--version', action='version',

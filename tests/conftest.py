@@ -63,10 +63,11 @@ def deck():
 
 
 @pytest.fixture
-def opts():
+def opts(mdslides):
     """Factory for a stand-in of the parsed command line options."""
     def make(**overrides):
-        values = {'dump_ast': False, 'slide_level': 1, 'variable': {}}
+        values = {'dump_ast': False, 'slide_level': 1, 'variable': {},
+                  'escapechar': mdslides.LISTINGS_ESCAPECHAR}
         values.update(overrides)
         return argparse.Namespace(**values)
     return make

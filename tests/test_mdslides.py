@@ -348,6 +348,34 @@ def test_render_fenced_code(render, fence, expected):
         assert 'language=' not in result
 
 
+@pytest.mark.parametrize('fence', ['lstlisting', 'listings', 'LstListing'])
+def test_render_raw_listing_gets_an_escapechar(render, fence):
+    """The deck writes '@$symState$@' to put maths inside a listing; without
+escapechar those characters print as themselves."""
+    body = render('# S\n\n```%s\n@$x_1$@ := 0\n```\n' % fence)
+    assert '\\begin{lstlisting}[escapechar=@]' in body
+    assert '@$x_1$@ := 0' in body
+    assert 'language=' not in body
+
+
+def test_render_escapechar_can_be_changed(render):
+    body = render('# S\n\n```lstlisting\n!$x$!\n```\n', escapechar='!')
+    assert '[escapechar=!]' in body
+
+
+def test_render_escapechar_can_be_switched_off(render):
+    body = render('# S\n\n```lstlisting\n@$x$@\n```\n', escapechar='')
+    assert '\\begin{lstlisting}\n' in body
+    assert 'escapechar' not in body
+
+
+def test_render_a_language_fence_gets_no_escapechar(render):
+    """A C snippet is free to contain an '@'."""
+    body = render('# S\n\n```C\nx = a@b;\n```\n')
+    assert 'escapechar' not in body
+    assert 'language={C}' in body
+
+
 def test_render_code_is_not_escaped(render):
     """A listing is verbatim; escaping it would show the backslashes."""
     result = render('# S\n\n```C\nif (a_b & c) { }\n```\n')
@@ -851,6 +879,24 @@ def test_render_deck_produces_frames(mdslides, deck, render):
                     if re.match(r'# \S', line)])
     assert result.count('\\begin{frame}') == headings
     assert result.count('\\begin{frame}') == result.count('\\end{frame}')
+
+
+def test_render_deck_algorithm_listing_can_escape_to_maths(mdslides, deck,
+                                                           render):
+    """The algorithm slide is written as listings input, not as C."""
+    _, body = mdslides.split_frontmatter(deck)
+    assert '```lstlisting' in body, 'expected a raw listing in the deck'
+    assert '[escapechar=@]' in render(body)
+
+
+def test_template_settings_that_listings_needs(template):
+    """Behaviour the real deck proved necessary, easy to delete by accident.
+
+upquote: 'B' in a C listing came out as typographic quotes.
+breaklines: long lines ran off the edge of the slide and were clipped.
+"""
+    assert 'upquote' in template
+    assert 'breaklines=true' in template
 
 
 def test_render_deck_math_survives_verbatim(mdslides, deck, render):

@@ -32,11 +32,17 @@
 %% Fenced code blocks become lstlisting, so the package is not optional.
 %% Settings come before header-includes, so that a \lstset of your own wins.
 \usepackage{listings}
+%% Straight quotes in code: without this, 'B' in a listing comes out as
+%% typographic quotes, which is wrong for a character literal.
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
 \lstset{
   basicstyle=\ttfamily\small,
   columns=fullflexible,
   keepspaces=true,
   showstringspaces=false,
+  upquote=true,
+  breaklines=true,          % long lines wrap instead of running off the slide
+  breakatwhitespace=false,
 }
 
 \newcommand{\ol}[1]{\textcolor{blue}{\ifmmode \text{[OL: #1]}\else [OL: #1] \fi}}

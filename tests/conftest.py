@@ -81,6 +81,14 @@ def convert(mdslides, template, opts):
 
 
 @pytest.fixture
+def render(mdslides, opts):
+    """Render a Markdown body to Beamer, without the template around it."""
+    def run(text, **overrides):
+        return mdslides.make_markdown(opts(**overrides)).convert(text)
+    return run
+
+
+@pytest.fixture
 def parse_args(mdslides):
     """parse_args(), closing any file it opened on the way out."""
     opened = []

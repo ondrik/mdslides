@@ -222,6 +222,245 @@ def test_args_slide_level(parse_args, argv):
 
 
 ###########################################
+# The renderer: helpers
+###########################################
+
+@pytest.mark.parametrize('text, expected', [
+    pytest.param('a_b', 'a\\_b', id='underscore'),
+    pytest.param('100%', '100\\%', id='percent'),
+    pytest.param('a & b', 'a \\& b', id='ampersand'),
+    pytest.param('#1', '\\#1', id='hash'),
+    pytest.param('a{b}', 'a\\{b\\}', id='braces'),
+    pytest.param('\\n', '\\textbackslash{}n', id='backslash'),
+    pytest.param('a~b', 'a\\~{}b', id='tilde'),
+    pytest.param('plain', 'plain', id='nothing-to-do'),
+])
+def test_escape_latex(mdslides, text, expected):
+    assert mdslides.escape_latex(text) == expected
+
+
+@pytest.mark.parametrize('title, expected', [
+    pytest.param('Plain', ('Plain', []), id='no-attributes'),
+    pytest.param('Algorithm {.fragile}', ('Algorithm', ['fragile']),
+                 id='fragile'),
+    pytest.param('T {.plain .allowframebreaks}',
+                 ('T', ['plain', 'allowframebreaks']), id='two-classes'),
+    pytest.param('T {label=intro}', ('T', ['label=intro']), id='key-value'),
+    pytest.param('T {#intro}', ('T', ['label=intro']), id='identifier'),
+    pytest.param('T {.nosuchoption}', ('T', []), id='unknown-class-dropped'),
+    # a title may legitimately end in a braced LaTeX group
+    pytest.param('A \\hlbl{Foo}', ('A \\hlbl{Foo}', []), id='latex-group'),
+    pytest.param('\\texttt{x}', ('\\texttt{x}', []), id='only-a-latex-group'),
+])
+def test_split_heading_attributes(mdslides, title, expected):
+    assert mdslides.split_heading_attributes(title) == expected
+
+
+###########################################
+# The renderer: document structure
+###########################################
+
+def test_render_one_frame_per_heading(render):
+    result = render('# One\n\ntext\n\n# Two\n\ntext\n')
+    assert result.count('\\begin{frame}') == 2
+    assert result.count('\\end{frame}') == 2
+    assert '\\begin{frame}{One}' in result
+    assert '\\begin{frame}{Two}' in result
+
+
+def test_render_heading_above_the_slide_level_is_a_section(render):
+    result = render('# Part\n\n## Slide\n\ntext\n', slide_level=2)
+    assert '\\section{Part}' in result
+    assert '\\begin{frame}{Slide}' in result
+
+
+def test_render_heading_below_the_slide_level_stays_in_the_frame(render):
+    result = render('# Slide\n\n## Sub\n\ntext\n')
+    assert result.count('\\begin{frame}') == 1
+    assert 'Sub' in result
+
+
+def test_render_thematic_break_starts_an_untitled_frame(render):
+    result = render('# One\n\ntext\n\n---\n\nmore\n')
+    assert result.count('\\begin{frame}') == 2
+    assert '\\begin{frame}\n' in result
+
+
+def test_render_material_before_the_first_heading(render):
+    result = render('orphan text\n\n# Slide\n')
+    assert result.count('\\begin{frame}') == 2
+    assert 'orphan text' in result
+
+
+def test_render_metadata_blank_lines_make_no_empty_frame(mdslides, convert):
+    """split_frontmatter() pads with blank lines; they must not become a frame."""
+    result = convert('---\ntitle: T\n---\n\n# Slide\n')
+    assert result.count('\\begin{frame}') == 1
+
+
+###########################################
+# The renderer: blocks
+###########################################
+
+def test_render_nested_lists(render):
+    result = render('# S\n\n* one\n  * inner\n* two\n')
+    assert result.count('\\begin{itemize}') == 2
+    assert result.count('\\end{itemize}') == 2
+    assert '\\item one' in result
+    assert '\\item inner' in result
+
+
+def test_render_ordered_list(render):
+    result = render('# S\n\n1. one\n2. two\n')
+    assert '\\begin{enumerate}' in result
+    assert '\\end{enumerate}' in result
+
+
+def test_render_block_quote(render):
+    assert '\\begin{quote}' in render('# S\n\n> quoted\n')
+
+
+def test_render_html_comments_are_dropped(render):
+    """This is how the deck's commented-out slides disappear."""
+    result = render('# S\n\n<!-- a comment -->\n\ntext\n')
+    assert 'comment' not in result
+    assert 'text' in result
+
+
+@pytest.mark.parametrize('fence, expected', [
+    pytest.param('C', 'language={C}', id='c'),
+    pytest.param('haskell', 'language={Haskell}', id='case-insensitive'),
+    pytest.param('lua', 'language={[5.3]Lua}', id='dialect-in-braces'),
+    pytest.param('', None, id='no-language'),
+    pytest.param('nosuchlanguage', None, id='unknown-language'),
+])
+def test_render_fenced_code(render, fence, expected):
+    result = render('# S\n\n```%s\ncode()\n```\n' % fence)
+    assert '\\begin{lstlisting}' in result
+    assert 'code()' in result
+    if expected:
+        assert expected in result
+    else:
+        # a language listings cannot load would be a hard error
+        assert 'language=' not in result
+
+
+def test_render_code_is_not_escaped(render):
+    """A listing is verbatim; escaping it would show the backslashes."""
+    result = render('# S\n\n```C\nif (a_b & c) { }\n```\n')
+    assert 'a_b & c' in result
+
+
+###########################################
+# The renderer: [fragile]
+###########################################
+
+def test_render_fragile_is_added_for_a_listing(render):
+    assert '\\begin{frame}[fragile]{S}' in render('# S\n\n```C\nx\n```\n')
+
+
+def test_render_fragile_is_not_added_without_one(render):
+    result = render('# S\n\ntext\n')
+    assert '\\begin{frame}{S}' in result
+    assert 'fragile' not in result
+
+
+def test_render_fragile_is_found_inside_a_list(render):
+    """The listing is nested two levels down, not a direct child."""
+    result = render('# S\n\n* item\n\n    ```C\n    x\n    ```\n')
+    assert '[fragile]' in result
+
+
+def test_render_fragile_attribute_is_honoured(render):
+    result = render('# S {.fragile}\n\ntext\n')
+    assert '\\begin{frame}[fragile]{S}' in result
+    assert '{.fragile}' not in result
+
+
+def test_render_fragile_is_not_duplicated(render):
+    result = render('# S {.fragile}\n\n```C\nx\n```\n')
+    assert result.count('fragile') == 1
+
+
+###########################################
+# The renderer: inline, and the passthrough rule
+###########################################
+
+def test_render_emphasis(render):
+    result = render('# S\n\n*one* and **two**\n')
+    assert '\\emph{one}' in result
+    assert '\\textbf{two}' in result
+
+
+def test_render_nested_emphasis(render):
+    result = render('# S\n\n*a lot of **stuff***\n')
+    assert '\\emph{a lot of \\textbf{stuff}}' in result
+
+
+def test_render_inline_code_is_escaped(render):
+    assert '\\texttt{a\\_b}' in render('# S\n\n`a_b`\n')
+
+
+@pytest.mark.parametrize('text', [
+    pytest.param('\\hlbl{highlighted}', id='macro-with-argument'),
+    pytest.param('\\ldots', id='bare-macro'),
+    pytest.param('a~program', id='non-breaking-space'),
+    pytest.param('\\textbf{x} \\emph{y}', id='several-macros'),
+])
+def test_render_latex_passes_through(render, text):
+    """Anything not recognized as Markdown is assumed to be LaTeX."""
+    assert text in render('# S\n\n%s\n' % text)
+
+
+def test_render_latex_inside_markdown_emphasis(render):
+    assert '\\textbf{\\hlbl{input vectors}}' in \
+        render('# S\n\n**\\hlbl{input vectors}**\n')
+
+
+@pytest.mark.parametrize('source, expected', [
+    pytest.param('\\_', '\\_', id='underscore-keeps-its-backslash'),
+    pytest.param('\\#', '\\#', id='hash-keeps-its-backslash'),
+    pytest.param('\\*', '*', id='asterisk-loses-it'),
+])
+def test_render_escaped_characters(render, source, expected):
+    """LaTeX spells '\\_' the same way Markdown does, but not '\\*'."""
+    body = render('# S\n\nx%sy\n' % source)
+    assert 'x%sy' % expected in body
+
+
+def test_render_link(render):
+    assert '\\href{http://x.org}{text}' in render('# S\n\n[text](http://x.org)\n')
+
+
+def test_render_image(render):
+    assert '\\includegraphics{fig.png}' in render('# S\n\n![](fig.png)\n')
+
+
+###########################################
+# The renderer: the committed deck
+###########################################
+
+def test_render_deck_produces_frames(mdslides, deck, render):
+    _, body = mdslides.split_frontmatter(deck)
+    result = render(body)
+    # one frame per '#' heading in the source
+    headings = len([line for line in body.splitlines()
+                    if re.match(r'# \S', line)])
+    assert result.count('\\begin{frame}') == headings
+    assert result.count('\\begin{frame}') == result.count('\\end{frame}')
+
+
+def test_render_deck_listings_all_have_a_frame_marked_fragile(mdslides, deck,
+                                                              render):
+    """Every listing has to sit in a frame that beamer will re-read."""
+    _, body = mdslides.split_frontmatter(deck)
+    for frame in render(body).split('\\begin{frame}')[1:]:
+        if '\\begin{lstlisting}' in frame:
+            assert frame.startswith('[fragile]') or \
+                frame.startswith('[fragile,')
+
+
+###########################################
 # build_variables() -- metadata into template substitutions
 ###########################################
 

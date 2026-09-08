@@ -41,6 +41,16 @@
 
 \newcommand{\ol}[1]{\textcolor{blue}{\ifmmode \text{[OL: #1]}\else [OL: #1] \fi}}
 
+\newcommand{\hlbl}[1]{\textcolor{blue}{#1}}
+\newcommand{\hlgr}[1]{\textcolor{olive!50!green}{#1}}
+\newcommand{\hlrd}[1]{\textcolor{red}{#1}}
+\newcommand{\hlorg}[1]{\textcolor{Orange}{#1}}
+\newcommand{\hlgrey}[1]{\textcolor{black!50}{#1}}
+\newcommand{\hldgr}[1]{\textcolor{olive!20!green}{#1}}
+
+
+
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \newcommand{\backupbegin}{
    \newcounter{finalframe}

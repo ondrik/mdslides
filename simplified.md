@@ -24,9 +24,6 @@ toc: false
 header-includes: |
   \usepackage{listings}
   \usepackage{tabularx}
-
-  \input{macros.tex}
-  \input{stylesheet.tex}
 ---
 
 # Manual Testing

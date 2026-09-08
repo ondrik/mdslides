@@ -12,6 +12,9 @@ The Beamer preamble lives in an external template file (see --template).
 
 import argparse
 import marko
+import marko.block
+import marko.helpers
+import marko.inline
 import os
 import re
 import string
@@ -92,6 +95,23 @@ LISTINGS_LANGUAGES = {
     'llvm': 'LLVM', 'verilog': 'Verilog', 'vhdl': 'VHDL',
     'fortran': 'Fortran', 'pascal': 'Pascal', 'ada': 'Ada',
 }
+
+# A LaTeX macro call: \name, \name*, \name[opt]{arg}, \name{a}{b}.  Regular
+# expressions cannot count, so brace nesting is spelled out to three levels,
+# which covers anything written by hand.
+BRACED = r'\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\}'
+MACRO = r'\\[A-Za-z@]+\*?(?:\[[^\]\n]*\])?(?:' + BRACED + r')*'
+
+# A line holding nothing but macro calls, e.g. '\pausex' or '\medskip'.
+MACRO_LINE_RE = re.compile(r'[ \t]*(?:' + MACRO + r'[ \t]*)+$', re.MULTILINE)
+
+# The start of a LaTeX environment, '\begin{tabularx}'.
+BEGIN_ENV_RE = re.compile(r'[ \t]*\\begin\{([A-Za-z@*]+)\}')
+
+# Environments and macros that typeset their contents verbatim, so that a
+# frame containing raw LaTeX still gets [fragile].
+VERBATIM_RE = re.compile(r'\\begin\{(?:lstlisting|verbatim|Verbatim|alltt'
+                         r'|minted|semiverbatim)\}|\\verb|\\lstinline')
 
 # A YAML metadata block, fenced by '---' and closed by '---' or '...'.  Only
 # recognized at the very start of the document, where CommonMark would
@@ -232,6 +252,127 @@ metadata block.
 
 
 ###########################################
+class MathDisplay(marko.inline.InlineElement):
+    """Display maths, '$$ ... $$'."""
+
+    # above Math, so that '$$' is not read as an empty inline '$$'
+    priority = 9
+    pattern = re.compile(r'(?<!\\)\$\$([\s\S]+?)(?<!\\)\$\$')
+    parse_children = False
+
+
+class Math(marko.inline.InlineElement):
+    """Inline maths, '$ ... $'.
+
+Claimed before emphasis, which is what keeps '$pc_1 \\land pc_2$' intact:
+left to marko those underscores would pair up into emphasis.  A newline ends
+the search, so a stray '$' cannot run away with the rest of the paragraph.
+"""
+
+    priority = 8
+    pattern = re.compile(r'(?<!\\)\$((?:[^$\n\\]|\\.)+?)(?<!\\)\$')
+    parse_children = False
+
+
+class RawLatexInline(marko.inline.InlineElement):
+    """A LaTeX macro call in the middle of a sentence, '\\hlbl{...}'.
+
+Claimed as a whole so that Markdown never looks inside the arguments, where
+an underscore or an asterisk would otherwise be taken as markup.
+"""
+
+    priority = 8
+    pattern = re.compile(MACRO)
+    parse_children = False
+    parse_group = 0             # the pattern has no capturing group
+
+
+class RawLatexEnvironment(marko.block.BlockElement):
+    """A LaTeX environment, '\\begin{tabularx}' to '\\end{tabularx}'.
+
+Everything in between is taken verbatim, which is what lets a table with its
+'&' and '\\\\' sit in the middle of a slide.  Left to Markdown, '\\\\' would be
+read as an escaped backslash and lose one of them.
+
+This does break a paragraph: a '\\begin{...}' at the start of a line is a
+block by any reading, and the deck has one directly below a ':::' line with
+no blank line in between.
+"""
+
+    priority = 9
+    breaks_paragraph = True
+
+    def __init__(self, text):
+        self.text = text
+        self.children = []
+
+    @classmethod
+    def match(cls, source):
+        return source.expect_re(BEGIN_ENV_RE)
+
+    @classmethod
+    def parse(cls, source):
+        first = source.next_line()
+        source.consume()
+
+        environment = re.escape(BEGIN_ENV_RE.match(first).group(1))
+        begin = re.compile(r'\\begin\{' + environment + r'\}')
+        end = re.compile(r'\\end\{' + environment + r'\}')
+
+        # count nesting, so that an inner tabular of the same kind does not
+        # end the outer one early
+        lines, depth = [first], 1
+        while not source.exhausted and depth > 0:
+            line = source.next_line()
+            if line is None:
+                break                       # unterminated; take what we have
+            source.consume()
+            lines.append(line)
+            depth += len(begin.findall(line)) - len(end.findall(line))
+
+        return ''.join(lines).rstrip('\n')
+
+
+class RawLatexMacroLine(marko.block.BlockElement):
+    """A line holding nothing but macro calls, e.g. '\\pausex' or '\\medskip'.
+
+breaks_paragraph is deliberately False, unlike the environment above.  A
+'\\pausex' at column 0 in the middle of a list should stay with the item it
+follows, as a lazy continuation line, rather than tearing the list in two.
+"""
+
+    priority = 9
+    breaks_paragraph = False
+
+    def __init__(self, text):
+        self.text = text
+        self.children = []
+
+    @classmethod
+    def match(cls, source):
+        if source.expect_re(BEGIN_ENV_RE):
+            return None                     # RawLatexEnvironment's business
+        return source.expect_re(MACRO_LINE_RE)
+
+    @classmethod
+    def parse(cls, source):
+        line = source.next_line()
+        source.consume()
+        return line.strip()
+
+
+###########################################
+def markdown_extension():
+    """markdown_extension() -> marko.helpers.MarkoExtension
+
+The elements above, as an extension to register with marko.
+"""
+    return marko.helpers.MarkoExtension(
+        elements=[MathDisplay, Math, RawLatexInline,
+                  RawLatexEnvironment, RawLatexMacroLine])
+
+
+###########################################
 def escape_latex(text):
     """escape_latex(str) -> str
 
@@ -286,7 +427,13 @@ Whether anything in the subtree is typeset verbatim.  Beamer needs
 body twice.
 """
     for element in elements:
-        if element.get_type() in ('FencedCode', 'CodeBlock'):
+        kind = element.get_type()
+        if kind in ('FencedCode', 'CodeBlock'):
+            return True
+        if kind in ('RawLatexEnvironment', 'RawLatexMacroLine') \
+                and VERBATIM_RE.search(element.text):
+            return True
+        if kind == 'RawLatexInline' and VERBATIM_RE.search(element.children):
             return True
         children = getattr(element, 'children', None)
         if children and not isinstance(children, str) \
@@ -437,6 +584,12 @@ frame, and a thematic break starts a frame with no title.
         # only reached inside a container; at the top level it starts a frame
         return '\\medskip\\hrule\\medskip\n'
 
+    def render_raw_latex_environment(self, element):
+        return element.text + '\n'
+
+    def render_raw_latex_macro_line(self, element):
+        return element.text + '\n'
+
     def render_html_block(self, element):
         return ''       # commented-out slides and <!-- notes -->
 
@@ -449,6 +602,15 @@ frame, and a thematic break starts a frame with no title.
 
     def render_raw_text(self, element):
         return element.children         # straight through to LaTeX
+
+    def render_math(self, element):
+        return '$%s$' % element.children
+
+    def render_math_display(self, element):
+        return '\\[%s\\]' % element.children
+
+    def render_raw_latex_inline(self, element):
+        return element.children
 
     def render_literal(self, element):
         char = element.children
@@ -486,7 +648,8 @@ over as class attributes of a throwaway subclass.
 """
     renderer = type('_BeamerRenderer', (BeamerRenderer,),
                     {'slide_level': opts.slide_level})
-    return marko.Markdown(renderer=renderer)
+    return marko.Markdown(renderer=renderer,
+                          extensions=[markdown_extension()])
 
 
 ###########################################

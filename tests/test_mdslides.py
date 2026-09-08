@@ -437,6 +437,155 @@ def test_render_image(render):
 
 
 ###########################################
+# Maths
+###########################################
+
+@pytest.mark.parametrize('source', [
+    pytest.param('$pc_1 \\land pc_2$', id='underscores'),
+    pytest.param('$\\mathit{st}_{i}$', id='subscript-braces'),
+    pytest.param('$2^{80}$', id='superscript'),
+    pytest.param('$a_1 + b_2 = c_3$', id='several-underscores'),
+    pytest.param('$x * y * z$', id='asterisks'),
+    pytest.param('$\\mathbb{T}$', id='macro-inside'),
+])
+def test_math_is_left_intact(render, source):
+    """Emphasis must not get at the underscores or asterisks inside maths."""
+    body = render('# S\n\n%s\n' % source)
+    assert source in body
+    assert '\\emph' not in body
+    assert '\\textbf' not in body
+
+
+def test_math_several_spans_on_one_line(render):
+    body = render('# S\n\nfrom $a_1$ to $b_2$ inclusive\n')
+    assert '$a_1$' in body and '$b_2$' in body
+
+
+def test_math_around_inline_code(render):
+    """The deck writes '$P($`counter == 10`$) = ...$'."""
+    body = render('# S\n\n$P($`counter == 10`$) = 0.5$\n')
+    assert '$P($' in body
+    assert '\\texttt{counter == 10}' in body
+    assert '$) = 0.5$' in body
+
+
+def test_math_display(render):
+    assert '\\[x = y\\]' in render('# S\n\n$$x = y$$\n')
+
+
+def test_math_escaped_dollar_is_not_maths(render):
+    """'\\$5' is a dollar sign, and LaTeX spells it '\\$' too."""
+    body = render('# S\n\ncosts \\$5 today\n')
+    assert 'costs \\$5 today' in body
+
+
+def test_math_a_lone_dollar_does_not_run_away(render):
+    """A newline ends the search, so an unpaired '$' cannot eat the rest."""
+    body = render('# S\n\nprice is $5 here\nand more text\n')
+    assert 'and more text' in body
+
+
+###########################################
+# Raw LaTeX: inline
+###########################################
+
+def test_raw_inline_protects_macro_arguments(render):
+    """Markdown must not look inside '\\hlbl{...}'."""
+    assert '\\hlbl{a_b}' in render('# S\n\n\\hlbl{a_b}\n')
+
+
+@pytest.mark.parametrize('source', [
+    pytest.param('\\ldots', id='bare'),
+    pytest.param('\\hlbl{x}', id='one-argument'),
+    pytest.param('\\frac{a}{b}', id='two-arguments'),
+    pytest.param('\\includegraphics[width=2cm]{fig.png}', id='option'),
+    pytest.param('\\textbf{\\hlbl{nested}}', id='nested-braces'),
+    pytest.param('\\section*{starred}', id='starred'),
+])
+def test_raw_inline_forms(render, source):
+    assert source in render('# S\n\n%s\n' % source)
+
+
+###########################################
+# Raw LaTeX: environments
+###########################################
+
+TABLE = ('\\begin{tabularx}{\\textwidth}{|c|X|}\n'
+         '  \\hline\n'
+         '  $\\mathit{line}$ & \\texttt{x} \\\\\n'
+         '  &&\\\\[\\rowfill]\n'
+         '\\end{tabularx}\n')
+
+
+def test_raw_environment_is_verbatim(render):
+    """'&' and '\\\\' have to survive; Markdown would eat a backslash."""
+    body = render('# S\n\n%s' % TABLE)
+    for line in TABLE.splitlines():
+        assert line in body
+
+
+def test_raw_environment_breaks_a_paragraph(render):
+    """The deck has a table directly below ':::' with no blank line."""
+    body = render('# S\n\n::: { .column }\n%s' % TABLE)
+    assert '\\hline' in body
+    assert '\\\\' in body          # not collapsed to a single backslash
+
+
+def test_raw_environment_nesting(render):
+    source = ('\\begin{tabular}{c}\n'
+              '\\begin{tabular}{c} inner \\end{tabular}\n'
+              '\\end{tabular}\n')
+    body = render('# S\n\n%safter\n' % source)
+    assert body.count('\\begin{tabular}') == 2
+    assert body.count('\\end{tabular}') == 2
+    assert 'after' in body
+
+
+def test_raw_environment_unterminated_is_not_fatal(render):
+    body = render('# S\n\n\\begin{tabular}{c}\na & b\n')
+    assert '\\begin{tabular}{c}' in body
+
+
+def test_raw_environment_makes_the_frame_fragile(render):
+    """A hand-written verbatim environment needs [fragile] just as much."""
+    body = render('# S\n\n\\begin{verbatim}\nliteral\n\\end{verbatim}\n')
+    assert '[fragile]' in body
+
+
+def test_raw_environment_table_does_not_need_fragile(render):
+    body = render('# S\n\n%s' % TABLE)
+    assert 'fragile' not in body
+
+
+###########################################
+# Raw LaTeX: macro lines
+###########################################
+
+def test_macro_line_on_its_own(render):
+    body = render('# S\n\ntext\n\n\\pausex\n\nmore\n')
+    assert '\\pausex' in body
+
+
+def test_macro_line_does_not_tear_a_list_apart(render):
+    """A '\\pausex' at column 0 mid-list stays with the item above it."""
+    body = render('# S\n\n* one\n* two\n\\pausex\n* three\n')
+    assert body.count('\\begin{itemize}') == 1
+    assert '\\pausex' in body
+
+
+def test_macro_line_indented_in_a_list_item(render):
+    body = render('# S\n\n* item\n\n    \\medskip\n\n* next\n')
+    assert '\\medskip' in body
+    assert body.count('\\begin{itemize}') == 1
+
+
+def test_macro_line_is_not_a_paragraph_of_prose(render):
+    """A line with a macro and prose is prose, not a macro line."""
+    body = render('# S\n\n\\hlbl{pros}: and some words\n')
+    assert '\\hlbl{pros}: and some words' in body
+
+
+###########################################
 # The renderer: the committed deck
 ###########################################
 
@@ -448,6 +597,26 @@ def test_render_deck_produces_frames(mdslides, deck, render):
                     if re.match(r'# \S', line)])
     assert result.count('\\begin{frame}') == headings
     assert result.count('\\begin{frame}') == result.count('\\end{frame}')
+
+
+def test_render_deck_math_survives_verbatim(mdslides, deck, render):
+    """Every maths span in the deck has to come out exactly as written."""
+    _, body = mdslides.split_frontmatter(deck)
+    result = render(body)
+    # the deck keeps a few dropped slides in HTML comments, maths and all
+    visible = re.sub(r'<!--.*?-->', '', body, flags=re.S)
+    spans = re.findall(r'(?<!\\)\$(?:[^$\n\\]|\\.)+?(?<!\\)\$', visible)
+    assert len(spans) > 30, 'expected the deck to be full of maths'
+    assert [span for span in spans if span not in result] == []
+
+
+def test_render_deck_table_survives_verbatim(mdslides, deck, render):
+    """The tabularx table, '&' and '\\\\' and all."""
+    _, body = mdslides.split_frontmatter(deck)
+    result = render(body)
+    table = re.search(r'\\begin\{tabularx\}.*?\\end\{tabularx\}', body, re.S)
+    assert table, 'expected a tabularx table in the deck'
+    assert table.group(0) in result
 
 
 def test_render_deck_listings_all_have_a_frame_marked_fragile(mdslides, deck,

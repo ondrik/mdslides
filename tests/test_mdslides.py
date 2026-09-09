@@ -1382,7 +1382,7 @@ def test_cli_help_lists_the_options(script):
     done = run(script, '--help')
     assert done.returncode == 0
     for option in ('--output', '--template', '--variable', '--slide-level',
-                   '--dump-ast'):
+                   '--dump-ast', '--escapechar', '--pdf'):
         assert option in done.stdout
 
 
@@ -1438,6 +1438,130 @@ def test_cli_handles_non_ascii(script, tmp_path, source):
         done = run(script, str(deck))
     assert done.returncode == 0, done.stderr
     assert 'Ondřej Lengál' in done.stdout
+
+
+###########################################
+# --pdf
+###########################################
+
+class FakeRun:
+    """Stands in for subprocess.run, recording the commands asked for."""
+
+    def __init__(self, returncode=0):
+        self.commands = []
+        self.returncode = returncode
+
+    def __call__(self, command, **kwargs):
+        self.commands.append(command)
+        return subprocess.CompletedProcess(command, self.returncode)
+
+
+def test_latex_prefers_latexmk(mdslides, monkeypatch, tmp_path):
+    """latexmk works out for itself how many passes are needed."""
+    monkeypatch.setattr(mdslides.shutil, 'which',
+                        lambda name: '/bin/' + name if name == 'latexmk' else None)
+    fake = FakeRun()
+    monkeypatch.setattr(mdslides.subprocess, 'run', fake)
+    assert mdslides.run_latex(str(tmp_path / 'deck.tex')) == 0
+    assert len(fake.commands) == 1
+    assert fake.commands[0][0] == 'latexmk'
+
+
+def test_latex_falls_back_to_two_pdflatex_passes(mdslides, monkeypatch,
+                                                 tmp_path):
+    """beamer needs a second pass before its counters settle."""
+    monkeypatch.setattr(mdslides.shutil, 'which',
+                        lambda name: '/bin/' + name if name == 'pdflatex' else None)
+    fake = FakeRun()
+    monkeypatch.setattr(mdslides.subprocess, 'run', fake)
+    assert mdslides.run_latex(str(tmp_path / 'deck.tex')) == 0
+    assert [c[0] for c in fake.commands] == ['pdflatex', 'pdflatex']
+
+
+def test_latex_without_an_engine_is_reported(mdslides, monkeypatch, capsys,
+                                             tmp_path):
+    monkeypatch.setattr(mdslides.shutil, 'which', lambda name: None)
+    assert mdslides.run_latex(str(tmp_path / 'deck.tex')) == 1
+    assert 'neither latexmk nor pdflatex' in capsys.readouterr().err
+
+
+def test_latex_stops_at_the_first_failing_pass(mdslides, monkeypatch, tmp_path):
+    monkeypatch.setattr(mdslides.shutil, 'which',
+                        lambda name: '/bin/' + name if name == 'pdflatex' else None)
+    fake = FakeRun(returncode=1)
+    monkeypatch.setattr(mdslides.subprocess, 'run', fake)
+    assert mdslides.run_latex(str(tmp_path / 'deck.tex')) == 1
+    assert len(fake.commands) == 1, 'should not run again after a failure'
+
+
+def test_pdf_needs_somewhere_to_write(script):
+    """A PDF cannot be made out of stdout."""
+    done = run(script, '--pdf', stdin='# S\n')
+    assert done.returncode == 2
+    assert '--pdf needs -o FILE' in done.stderr
+
+
+def test_pdf_derives_the_output_name_from_the_input(mdslides, tmp_path,
+                                                    monkeypatch):
+    source = tmp_path / 'talk.md'
+    source.write_text('# S\n', encoding='utf-8')
+    args = mdslides.parse_args(['--pdf', str(source)])
+    args.template.close()
+    args.output.close()
+    assert args.output.name == str(tmp_path / 'talk.tex')
+
+
+def test_pdf_keeps_an_explicit_output_name(mdslides, tmp_path):
+    source = tmp_path / 'talk.md'
+    source.write_text('# S\n', encoding='utf-8')
+    args = mdslides.parse_args(['--pdf', str(source), '-o',
+                                str(tmp_path / 'other.tex')])
+    args.template.close()
+    args.output.close()
+    assert args.output.name == str(tmp_path / 'other.tex')
+
+
+@pdflatex_needed
+def test_pdf_builds_a_pdf_in_one_command(script, tmp_path):
+    (tmp_path / 'f.png').write_bytes(png_bytes())
+    source = tmp_path / 'deck.md'
+    source.write_text(doc("""
+        ---
+        title: "One command"
+        aspectratio: 169
+        ---
+
+        # A slide
+        * text and $x_1$
+
+        # A listing
+        ```C
+        int main(void) { return 0; }
+        ```
+    """), encoding='utf-8')
+    done = run(script, '--pdf', str(source))
+    assert done.returncode == 0, done.stderr
+    assert (tmp_path / 'deck.tex').exists()
+    assert (tmp_path / 'deck.pdf').exists()
+
+
+@pdflatex_needed
+def test_pdf_reports_latex_errors_and_fails(script, tmp_path):
+    source = tmp_path / 'bad.md'
+    source.write_text(doc("""
+        ---
+        title: T
+        header-includes: |
+          \\usepackage{nosuchpackageexists}
+        ---
+
+        # S
+        text
+    """), encoding='utf-8')
+    done = run(script, '--pdf', str(source))
+    assert done.returncode != 0
+    assert 'nosuchpackageexists' in done.stderr
+    assert 'bad.log' in done.stderr
 
 
 @pytest.mark.parametrize('argv, code', [

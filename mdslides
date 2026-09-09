@@ -17,7 +17,9 @@ import marko.helpers
 import marko.inline
 import os
 import re
+import shutil
 import string
+import subprocess
 import sys
 import yaml
 
@@ -260,6 +262,64 @@ characters.  A path that cannot be opened is a usage error, reported through
     except OSError as exc:
         parser.error("cannot open the %s '%s': %s"
                      % (what, path, exc.strerror))
+
+
+###########################################
+def run_latex(path, quiet=True):
+    """run_latex(str, bool) -> int
+
+Turns the generated .tex into a PDF and returns the exit status.
+
+latexmk is preferred: it works out for itself how many passes are needed.
+Failing that, pdflatex is run twice, which is what beamer needs before its
+overlay and page counters settle.  On failure the errors are lifted out of
+the .log, since the engine's own output buries them.
+"""
+    directory = os.path.dirname(os.path.abspath(path)) or '.'
+    name = os.path.basename(path)
+    flags = ['-interaction=nonstopmode', '-file-line-error']
+
+    if shutil.which('latexmk'):
+        # -silent keeps its running commentary (and the harmless note about
+        # the .nav file it is about to create) out of the way; errors still
+        # reach the log, which is where we read them from anyway
+        runs = [['latexmk', '-pdf'] + (['-silent'] if quiet else []) +
+                flags + [name]]
+    elif shutil.which('pdflatex'):
+        runs = 2 * [['pdflatex'] + flags + [name]]
+    else:
+        print('%s: neither latexmk nor pdflatex found' % PROG, file=sys.stderr)
+        return 1
+
+    for command in runs:
+        print('%s: %s %s' % (PROG, command[0], name), file=sys.stderr)
+        done = subprocess.run(command, cwd=directory,
+                              stdout=subprocess.DEVNULL if quiet else None)
+        if done.returncode:
+            report_latex_errors(os.path.join(
+                directory, os.path.splitext(name)[0] + '.log'))
+            return done.returncode
+
+    return 0
+
+
+###########################################
+def report_latex_errors(log_path):
+    """report_latex_errors(str) -> None
+
+Prints the lines LaTeX marked as errors, and where to read the rest.
+"""
+    try:
+        with open(log_path, encoding='utf-8', errors='replace') as handle:
+            lines = handle.read().splitlines()
+    except OSError:
+        return
+
+    for line in lines:
+        if line.startswith('!'):
+            print('  %s' % line, file=sys.stderr)
+
+    print('%s: see %s' % (PROG, log_path), file=sys.stderr)
 
 
 ###########################################
@@ -1125,6 +1185,12 @@ def parse_args(argv=None):
                         metavar='CHAR',
                         help="escape character inside ```lstlisting blocks, "
                              "empty to switch it off (default: %(default)s)")
+    parser.add_argument('-p', '--pdf', action='store_true',
+                        help="also run latexmk (or pdflatex) on the result; "
+                             "without -o the name is taken from the input")
+    parser.add_argument('--verbose-latex', action='store_true',
+                        help="show the LaTeX engine's output instead of just "
+                             "its errors")
     parser.add_argument('-d', '--dump-ast', action='store_true',
                         help="dump the parsed Markdown tree to stderr")
     parser.add_argument('--version', action='version',
@@ -1140,6 +1206,13 @@ def parse_args(argv=None):
             parser.error("-V expects KEY=VALUE, got '%s'" % item)
         variables[key.strip()] = value
     args.variable = variables
+
+    # A PDF cannot be made out of stdout, so --pdf needs a real file to
+    # write; take its name from the input when -o was not given.
+    if args.pdf and args.output == '-':
+        if args.file == '-':
+            parser.error('--pdf needs -o FILE, or a named input file')
+        args.output = os.path.splitext(args.file)[0] + '.tex'
 
     args.file = open_file(parser, args.file, 'r', sys.stdin, 'input file')
     args.output = open_file(parser, args.output, 'w', sys.stdout, 'output file')
@@ -1158,3 +1231,9 @@ if __name__ == '__main__':
     args = parse_args()
 
     args.output.write(convert(args.file.read(), args.template.read(), args))
+
+    if args.pdf:
+        # flush it to disk before handing the file to LaTeX
+        if args.output is not sys.stdout:
+            args.output.close()
+        sys.exit(run_latex(args.output.name, quiet=not args.verbose_latex))

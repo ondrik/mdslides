@@ -47,6 +47,11 @@
 
 \newcommand{\ol}[1]{\textcolor{blue}{\ifmmode \text{[OL: #1]}\else [OL: #1] \fi}}
 
+%% Emitted at the top of every tight list, i.e. one whose items are single
+%% paragraphs. \providecommand so that a header-includes of your own wins.
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+
 \newcommand{\hlbl}[1]{\textcolor{blue}{#1}}
 \newcommand{\hlgr}[1]{\textcolor{olive!50!green}{#1}}
 \newcommand{\hlrd}[1]{\textcolor{red}{#1}}

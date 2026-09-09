@@ -319,6 +319,23 @@ def test_render_ordered_list(render):
     assert '\\end{enumerate}' in result
 
 
+def test_render_tight_list_is_marked_tight(render):
+    """Otherwise beamer leaves a gap between every item."""
+    result = render('# S\n\n* one\n* two\n')
+    assert '\\begin{itemize}\n\\tightlist' in result
+
+
+def test_render_loose_list_is_not_marked_tight(render):
+    """Items separated by blank lines are meant to breathe."""
+    result = render('# S\n\n* one\n\n* two\n')
+    assert '\\tightlist' not in result
+
+
+def test_template_defines_tightlist(template):
+    """The renderer emits it, so it cannot be left undefined."""
+    assert 'providecommand{\\tightlist}' in template
+
+
 def test_render_block_quote(render):
     assert '\\begin{quote}' in render('# S\n\n> quoted\n')
 
@@ -706,6 +723,29 @@ def test_directive_columns(render):
     assert '\\end{columns}' in body
 
 
+def test_directive_columns_are_top_aligned_by_default(render):
+    """Without [T] beamer centres the columns against each other, so a short
+column of code floats in the middle beside a tall table."""
+    body = render('# S\n\n@columns\n@column 0.3\na\n@column 0.7\nb\n@end\n')
+    assert '\\begin{columns}[T]' in body
+
+
+@pytest.mark.parametrize('arguments, expected', [
+    pytest.param('[c]', '\\begin{columns}[c]', id='explicit-centred'),
+    pytest.param('[t]', '\\begin{columns}[t]', id='explicit-baseline'),
+    pytest.param('<2->', '\\begin{columns}<2->', id='overlay-only'),
+])
+def test_directive_columns_default_can_be_overridden(render, arguments,
+                                                     expected):
+    body = render('# S\n\n@columns%s\n@column 0.5\na\n@end\n' % arguments)
+    assert expected in body
+
+
+def test_directive_default_arguments_apply_only_to_columns(render):
+    body = render('# S\n\n@center\ntext\n@end\n')
+    assert '\\begin{center}\n' in body
+
+
 def test_directive_body_is_markdown(render):
     """The point of '@' over \\begin: the contents are still Markdown."""
     body = render('# S\n\n@column 0.5\n* **bold** item\n* $pc_1$\n@end\n')
@@ -1002,10 +1042,17 @@ def test_variables_short_forms_fall_back_to_the_long_ones(mdslides, short, long)
     assert variables[short] == 'Long Form'
 
 
-def test_variables_short_institute_defaults_to_empty(mdslides):
-    """The footline is cramped and a full affiliation rarely fits."""
+def test_variables_short_institute_falls_back_to_the_institute(mdslides):
+    """It appears in the footline beside the author, as it does in pandoc."""
     variables = mdslides.build_variables({'institute': 'Brno University'}, '')
-    assert variables['shortinstitute'] == ''
+    assert variables['shortinstitute'] == 'Brno University'
+
+
+def test_variables_short_institute_can_be_given_explicitly(mdslides):
+    variables = mdslides.build_variables(
+        {'institute': 'Brno University of Technology', 'short-institute': 'BUT'},
+        '')
+    assert variables['shortinstitute'] == 'BUT'
 
 
 @pytest.mark.parametrize('key', ['short-title', 'shorttitle'])

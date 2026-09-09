@@ -36,9 +36,11 @@ TEMPLATE_DEFAULTS = {
     'theme': 'default',
     'colortheme': 'default',
     'fonttheme': 'default',
-    # what the template used to hard-code, so that a deck which says nothing
-    # about fonts still looks the way it did
-    'fontfamily': 'palatino',
+    # Latin Modern, as pandoc does. The template used to hard-code palatino,
+    # but that only sets \rmfamily, which beamer never uses for slide text --
+    # it left the body in Nimbus Sans and the maths in Computer Modern, two
+    # families that do not belong together. lmodern covers both.
+    'fontfamily': 'lmodern',
     'title': '',
     'author': '',
     'institute': '',
@@ -54,9 +56,9 @@ JOINED_WITH_AND = ('author', 'institute')
 SHORT_FORMS = (('shorttitle', 'title'),
                ('shortauthor', 'author'),
                ('shortdate', 'date'),
-               # beamer's footline is cramped, and the full affiliation
-               # rarely fits, so this one defaults to empty instead
-               ('shortinstitute', None))
+               # beamer puts this in the footline next to the author; the
+               # full affiliation does fit at 16:9, and pandoc shows it too
+               ('shortinstitute', 'institute'))
 
 # Characters that have to be escaped where LaTeX is not wanted, i.e. inside
 # `inline code'.  Prose is passed through untouched; see BeamerRenderer.
@@ -185,6 +187,12 @@ COMMAND_DIRECTIVES = frozenset(('note', 'alert', 'only', 'uncover', 'visible',
 # Directives where repeating the name closes the previous one instead of
 # nesting inside it, so a row of columns needs no @end between them.
 SIBLING_DIRECTIVES = frozenset(('column',))
+
+# Arguments supplied when a directive is given none.  Without [T] beamer
+# centres the columns against each other, so a short column of code ends up
+# floating in the middle beside a tall table.  Write '@columns[c]' for the
+# centred behaviour.
+DIRECTIVE_DEFAULT_ARGUMENTS = {'columns': '[T]'}
 
 # A LaTeX macro call: \name, \name*, \name[opt]{arg}, \name{a}{b}.  Regular
 # expressions cannot count, so brace nesting is spelled out to three levels,
@@ -892,8 +900,11 @@ frame, and a thematic break starts a frame with no title.
 
     def render_list(self, element):
         environment = 'enumerate' if element.ordered else 'itemize'
-        return '\\begin{%s}\n%s\\end{%s}\n' % (
-            environment, self.render_children(element), environment)
+        # A list whose items are single paragraphs is set tight, the way
+        # pandoc does it; otherwise beamer leaves a gap between every item.
+        tight = '\\tightlist\n' if getattr(element, 'tight', False) else ''
+        return '\\begin{%s}\n%s%s\\end{%s}\n' % (
+            environment, tight, self.render_children(element), environment)
 
     def render_list_item(self, element):
         body = self.render_children(element).lstrip()
@@ -959,7 +970,7 @@ frame, and a thematic break starts a frame with no title.
         if element.kind == 'latex':
             return element.text             # exactly as written
         if element.kind == 'none':
-            return ''
+            return DIRECTIVE_DEFAULT_ARGUMENTS.get(element.name, '')
 
         if element.name in WIDTH_DIRECTIVES:
             if BARE_NUMBER_RE.match(element.text):

@@ -1,0 +1,20 @@
+# Runtime requirements for mdslides:
+#
+#     pip install -r requirements.txt
+#
+# Both are hard imports -- the converter does not start without them.  The
+# lower bounds are the versions it was developed against; earlier ones may
+# well work, but have not been tried.  Python 3.9 or newer (the syntax is
+# checked that far back; development was on 3.14).
+
+marko>=2.2                 # the Markdown parser, and the extension API that
+                           # lets us register elements for maths, raw LaTeX
+                           # and the @directives
+PyYAML>=6.0                # the YAML metadata block
+
+# Not needed to run the converter:
+#
+#   pytest       for the test suite            pip install pytest
+#   a TeX distribution with beamer, listings, tabularx and upquote
+#                for --pdf, and for the compile tests, which skip
+#                themselves when pdflatex is not on the PATH

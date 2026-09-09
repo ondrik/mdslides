@@ -12,8 +12,9 @@ where the text is meant to be literal.
     mdslides --pdf deck.md           # convert and build the PDF
     pytest                           # 261 tests
 
-Dependencies: `marko` and `PyYAML` (hard imports), `pytest` for the tests, a
-TeX installation for `--pdf` and the compile tests.
+Dependencies are in `requirements.txt`: `marko` and `PyYAML`, both hard
+imports. `pytest` for the tests and a TeX installation for `--pdf` are noted
+there too, as comments, so that installing the file does not drag them in.
 
 ## Files
 
@@ -23,6 +24,7 @@ TeX installation for `--pdf` and the compile tests.
 | `beamer.tex.tpl` | the Beamer preamble, external on purpose |
 | `tests/conftest.py` | fixtures, and `EXAMPLE` — a presentation in miniature |
 | `tests/test_mdslides.py` | the suite |
+| `requirements.txt` | the two runtime dependencies |
 
 Every commit message is deliberately detailed — `git log` is the fine-grained
 record of *why* each thing is the way it is.
@@ -223,8 +225,10 @@ text. The two syntaxes diverged deliberately.
    literal one here, so `"easily"` comes out with two closing quotes. Belongs
    behind a flag, since rewriting the author's characters cuts against the
    passthrough rule.
-6. **A README and `requirements.txt`.** Also `strikethrough` and footnotes,
-   which marko's GFM elements would make cheap.
+6. **A README.** The input format above is the only documentation there is,
+   and it is in a file aimed at whoever picks the work up rather than at
+   whoever wants to use the tool. Also `strikethrough` and footnotes, which
+   marko's GFM elements would make cheap.
 
 ## Conventions
 

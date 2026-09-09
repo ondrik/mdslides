@@ -16,7 +16,108 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPT = os.path.join(ROOT, 'mdslides')
 TEMPLATE = os.path.join(ROOT, 'beamer.tex.tpl')
-DECK = os.path.join(ROOT, 'simplified.md')
+
+# A whole presentation in miniature, exercising every construct the renderer
+# knows: metadata (including a commented-out line, which is legal Markdown
+# but not legal YAML), frames, a frame attribute, nested lists, a pause,
+# maths whose underscores emphasis must not touch, both kinds of code fence,
+# columns and other directives, a verbatim environment, and a figure.
+#
+# Several tests assert invariants over this document rather than fixed
+# strings, so it stands in for a real deck.  It is self-contained: nothing
+# here reads a file that is not written by the test.
+EXAMPLE = r'''---
+title: "An Example Deck"
+short-title: "Example"
+author: "Ondřej Lengál"
+institute: "FIT VUT v Brně"
+date: "3 November 2025"
+theme: "Madrid"
+colortheme: "dolphin"
+fonttheme: "professionalfonts"
+fontsize: 10pt
+aspectratio: 169
+<!--lang: en-->
+titlegraphic:
+toc: false
+section-titles: false
+
+header-includes: |
+  \usepackage{listings}
+  \usepackage{tabularx}
+
+  \providecommand{\hlbl}[1]{\textcolor{blue}{#1}}
+---
+
+# Lists and text
+* users try **\hlbl{input vectors}**, trying to break a program
+* \hlbl{pros}:
+  * **complete**: a failing input vector can be executed
+    * not always easy: concurrency, nondeterministic memory layout, etc.
+  * can be directed to some *corner cases*
+\pausex
+* \hlbl{cons}: problematic coverage of `corner_cases`
+
+# Maths
+* a symbolic state $\mathit{st} = (\mathit{line}, \mathit{store}, \mathit{pc})$
+* two terminal nodes have distinct $pc_1 \land pc_2$
+* $\mathit{store} : \mathit{Mem} \rightharpoonup \mathit{Sym}$ is partial
+* all values of the input: $2^{80}$
+* $P($`counter == 10`$) = 0.5$ for a uniform distribution
+
+# A listing
+```C
+char input[10];
+for (size_t i = 0; i < 10; ++i) {
+  if (input[i] == 'B') { ++counter; }
+}
+```
+
+# Listings input {.fragile}
+```lstlisting
+@$symState$@ := @$(line\colon 0,~pc\colon \mathit{true})$@  // initial state
+while @$workSet \neq \emptyset$@:
+  @$st$@ := @$workSet.getAndRemove$@()      // many ways to implement
+```
+
+# Columns
+@columns
+@column 0.4
+```C
+int power(x, y)
+{
+1:  int z = 1;
+}
+```
+
+@column 0.6
+\newlength{\rowfill}
+\setlength{\rowfill}{1mm}
+\begin{tabularx}{\textwidth}{|c|c|X|}
+  \hline
+  $\mathit{line}$ & \texttt{x} & $\mathit{pc}$ \\
+  \hline
+  &&\\[\rowfill]
+  \hline
+\end{tabularx}
+@end columns
+
+# Environments
+@theorem[Pumping lemma]
+For every **regular** language $L$ there is a $p \geq 1$ such that \ldots
+@end
+
+@block Results **so far**
+Nothing broken yet.
+@end
+
+# A figure
+![A **captioned** figure](f.png){width=0.4}
+
+# Used materials from
+* Jan Strejček, Masaryk University
+* Michael Hicks, University of Maryland
+'''
 
 
 def _read(path):
@@ -52,14 +153,18 @@ def template():
 
 
 @pytest.fixture(scope='session')
-def deck_path():
-    return DECK
+def deck():
+    """The example presentation, as text."""
+    return EXAMPLE
 
 
 @pytest.fixture(scope='session')
-def deck():
-    """The committed presentation, as an end-to-end fixture."""
-    return _read(DECK)
+def deck_path(tmp_path_factory):
+    """The example presentation, as a file, for running the command on."""
+    directory = tmp_path_factory.mktemp('deck')
+    path = directory / 'example.md'
+    path.write_text(EXAMPLE, encoding='utf-8')
+    return str(path)
 
 
 @pytest.fixture

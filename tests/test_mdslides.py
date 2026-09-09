@@ -908,7 +908,7 @@ def test_directive_listing_inside_makes_the_frame_fragile(render):
 
 
 ###########################################
-# The renderer: the committed deck
+# The renderer: the example presentation (conftest.EXAMPLE)
 ###########################################
 
 def test_render_deck_produces_frames(mdslides, deck, render):
@@ -943,10 +943,10 @@ def test_render_deck_math_survives_verbatim(mdslides, deck, render):
     """Every maths span in the deck has to come out exactly as written."""
     _, body = mdslides.split_frontmatter(deck)
     result = render(body)
-    # the deck keeps a few dropped slides in HTML comments, maths and all
+    # anything commented out is dropped on purpose, maths included
     visible = re.sub(r'<!--.*?-->', '', body, flags=re.S)
     spans = re.findall(r'(?<!\\)\$(?:[^$\n\\]|\\.)+?(?<!\\)\$', visible)
-    assert len(spans) > 30, 'expected the deck to be full of maths'
+    assert len(spans) > 10, 'expected the example to be full of maths'
     assert [span for span in spans if span not in result] == []
 
 
@@ -1268,13 +1268,6 @@ def png_bytes(size=8):
 def compile_latex(directory, text, script):
     """Run mdslides on `text' and pdflatex on the result."""
     (directory / 'f.png').write_bytes(png_bytes())
-    # The deck's header-includes pulls in the author's own style files,
-    # which are not in the repository. Stand-ins let the test judge our
-    # LaTeX rather than whether those files happen to be present.
-    for stub, macro in (('macros.tex', 'hlbl'), ('stylesheet.tex', 'hlrd')):
-        (directory / stub).write_text(
-            '\\providecommand{\\%s}[1]{\\textbf{#1}}\n' % macro,
-            encoding='utf-8')
     source = directory / 'deck.md'
     source.write_text(text, encoding='utf-8')
     done = run(script, str(source), '-o', str(directory / 'deck.tex'))
@@ -1346,10 +1339,8 @@ def test_compiles_everything_we_emit(tmp_path, script):
 
 @pdflatex_needed
 def test_the_deck_compiles(tmp_path, script, deck, deck_path):
-    """The real presentation, end to end."""
-    # the deck includes klee.png, which is not in the repository
-    text = deck.replace('klee.png', 'f.png')
-    done, log = compile_latex(tmp_path, text, script)
+    """The example presentation, end to end."""
+    done, log = compile_latex(tmp_path, deck, script)
     errors = [line for line in log.splitlines() if line.startswith('!')]
     assert errors == [], '\n'.join(errors)
     assert (tmp_path / 'deck.pdf').exists()

@@ -21,19 +21,25 @@ TeX installation for `--pdf` and the compile tests.
 |---|---|
 | `mdslides` | the whole converter, one executable script, no `.py` suffix |
 | `beamer.tex.tpl` | the Beamer preamble, external on purpose |
-| `simplified.md`, `symbolic-execution.md` | the example deck; byte-identical copies |
-| `tests/conftest.py` | fixtures; loads the extension-less script via `SourceFileLoader` |
+| `tests/conftest.py` | fixtures, and `EXAMPLE` — a presentation in miniature |
 | `tests/test_mdslides.py` | the suite |
-| `pokus.html` | an old Marp rendering of the deck, kept for reference |
 
 Every commit message is deliberately detailed — `git log` is the fine-grained
 record of *why* each thing is the way it is.
 
+**There is no presentation in this repository.** The lecture this was written
+for is content, not part of the converter, and lives in the author's teaching
+repository. What stands in for it is `EXAMPLE` in `tests/conftest.py`: one
+short document exercising every construct the renderer knows, which several
+tests assert invariants over rather than checking fixed strings.
+
 ## Current state
 
-The example deck converts to **40 pages, 0 LaTeX errors, 0 overfull frames**.
-Compared page by page against pandoc's output from the same source, **21 of 23
-pages carry identical text** (see "Comparing against pandoc" below).
+The last full measurement, taken while the lecture was still committed here:
+it converted to **40 pages, 0 LaTeX errors, 0 overfull frames**, and compared
+page by page against pandoc's output from the same source, **21 of 23 pages
+carried identical text** (see "Comparing against pandoc" below for how to
+reproduce that).
 
 ## Input format
 
@@ -155,13 +161,14 @@ reaching LaTeX comments out the rest of its line.
 `pytest.ini` promotes deprecation warnings to errors. Beyond unit tests there
 are three kinds of check worth keeping:
 
-- **Compile tests** run `pdflatex` on a document exercising every construct,
-  and on the deck itself. Skipped where pdflatex is absent, so the suite needs
-  nothing but the standard library plus pytest. These caught a missing
+- **Compile tests** run `pdflatex`, on an inline document exercising every
+  construct and on `EXAMPLE`. Skipped where pdflatex is absent, so the suite
+  needs nothing but the standard library plus pytest. These caught a missing
   `\usepackage{listings}` that no unit test could see.
-- **Deck invariants** rather than fixed strings: every maths span and the
-  `tabularx` table appear verbatim in the output, every frame holding a listing
-  is marked fragile, the frame count matches the number of `#` headings.
+- **Invariants over `EXAMPLE`** rather than fixed strings: every maths span and
+  the `tabularx` table appear verbatim in the output, every frame holding a
+  listing is marked fragile, the frame count matches the number of `#`
+  headings. Add to `EXAMPLE` when adding a construct, and these come along.
 - **Reading the built PDF.** `pdftotext -layout` found three faults on the code
   slides that the tests were blind to. Rendering a page with `pdftoppm` and
   looking at it found a column-alignment bug.
@@ -172,11 +179,20 @@ The reference lives outside this repo:
 
     ../../teaching/sav-private/97-Lectures-OLD/07-Symbolic-Execution/pandoc/
 
-Its `symbolic-execution.md` is byte-identical to this deck as first committed
-(`git show 2d20d16:simplified.md`). To compare fairly: copy `macros.tex`,
-`stylesheet.tex`, `filter.py3` and `klee.png` to a scratch directory, strip
-`\pausex` from both sources with `sed` so each frame is one page, build one
-with `pandoc --filter ./filter.py3 --wrap=none -t beamer -s` and one with
+Its `symbolic-execution.md` is byte-identical to the lecture as first
+committed here, which is still recoverable with
+
+    git show 2d20d16:simplified.md
+
+though note that version predates the `@` syntax. The version converted to
+`@columns`/`@column` is `git show fad2063:simplified.md`, and the last one,
+self-contained after the highlight macros moved into the template, is
+`git show 3c59e82:simplified.md`.
+
+To compare fairly: copy `macros.tex`, `stylesheet.tex`, `filter.py3` and
+`klee.png` to a scratch directory alongside both sources, strip `\pausex` from
+each with `sed` so every frame is one page, build one with
+`pandoc --filter ./filter.py3 --wrap=none -t beamer -s` and the other with
 `mdslides`, then compare `pdftotext -layout` page by page.
 
 Two differences remain, neither a defect here: pandoc numbers the lines of the
@@ -186,8 +202,8 @@ execution for verification" because its frame overflows by 12.78pt — ours fits
 it, since `lstlisting` is more compact than pandoc's highlighted blocks.
 
 Note the original pandoc source uses `::: {.column}` fenced divs and is **no
-longer valid input** here; the two sources diverged deliberately with the `@`
-syntax.
+longer valid input** here — run it through and the fences come out as literal
+text. The two syntaxes diverged deliberately.
 
 ## Remaining work
 
@@ -203,9 +219,10 @@ syntax.
    text. Marko's GFM elements would supply the parsing.
 4. **Syntax highlighting for code**, the last visual gap against pandoc, which
    colours keywords via pygments where ours is monochrome.
-5. **Smart quotes.** The 8 ASCII `"` in the deck's body become typographic
-   quotes in pandoc, literal ones here. Belongs behind a flag, since rewriting
-   the author's characters cuts against the passthrough rule.
+5. **Smart quotes.** An ASCII `"` becomes a typographic quote in pandoc and a
+   literal one here, so `"easily"` comes out with two closing quotes. Belongs
+   behind a flag, since rewriting the author's characters cuts against the
+   passthrough rule.
 6. **A README and `requirements.txt`.** Also `strikethrough` and footnotes,
    which marko's GFM elements would make cheap.
 

@@ -59,20 +59,36 @@ is added automatically to any frame containing verbatim material, so it is
 rarely needed by hand.
 
 **Section separator slides.** `{.section}` on a heading (also `{.subsection}`
-and `{.part}`) opens that sectioning level and produces a separator slide for
-it, using beamer's own page template so it follows the theme:
+and `{.part}`) opens that sectioning level:
 
-    # Part II: Symbolic execution {.section}
-
-    ->  \section{Part II: Symbolic execution}
-        \frame{\sectionpage}
+    # Part II: Symbolic execution {.section}   ->  \section{Part II: ...}
 
 It is a heading class rather than a slide level so that it drops into a deck
 whose frames are all `#`, without demoting every heading to `##`. A heading
-*above* the slide level is a section already; the class adds the separator
-slide to it. Give the heading content and it becomes the slide *after* the
+*above* the slide level is a section already; there the class only says which
+level. Give the heading content and it becomes the slide *after* the
 separator, so nothing written under it is dropped, and other classes still
 apply to that slide (`{.section .plain}`).
+
+The separator slide itself is **not** emitted next to the `\section`. It is
+hooked onto the sectioning level in the preamble, by `$sectionpages`:
+
+    \AtBeginSection[]{\frame[plain,noframenumbering]{\sectionpage}}
+
+which is what lets `section-titles: false` switch every one of them off, and
+gives one to a section made by a heading above the slide level too. `\...page`
+follows the theme, so a deck wanting a different divider overrides
+`\setbeamertemplate{section page}` from its `header-includes` — which also
+wins outright, because `$sectionpages` comes before `$headerincludes`.
+`[plain,noframenumbering]` is what a divider wants: no headline or footline,
+and no slide number consumed. `\frame[...]{...}` rather than a `frame`
+environment, so that no `\begin{frame}` appears in the preamble where
+anything counting the deck's slides would find it.
+
+**`toc: true`** puts a table of contents after the title page, titled by
+`toc-title` (default `Outline`). That one cannot be a template variable of
+its own — a hyphen is not an identifier, so `string.Template` could never
+reach `$toc-title`.
 
 Do **not** write `\section{...}` as a line of raw LaTeX instead: everything at
 the top level is wrapped into a frame, and a sectioning command has to sit
@@ -230,13 +246,13 @@ text. The two syntaxes diverged deliberately.
 
 ## Remaining work
 
-1. **The ignored metadata.** Ten keys parse and are then discarded: `toc` and
-   `section-titles` (no TOC frame; separator slides are asked for per heading
-   with `{.section}`, not switched on wholesale), `colorlinks`,
-   `linkcolor`, `urlcolor`, `filecolor`, `linkstyle` (the template loads no
-   `hyperref` at all), `titlegraphic`, `logo`, and `topic` (which pandoc
-   ignores too). `as_bool()` is already in place for the flags. This is the
-   biggest functional hole and it forces the template-engine decision above.
+1. **The ignored metadata.** Eight keys parse and are then discarded:
+   `colorlinks`, `linkcolor`, `urlcolor`, `filecolor` and `linkstyle` (the
+   template loads no `hyperref` at all), `titlegraphic`, `logo`, and `topic`
+   (which pandoc ignores too). `toc` and `section-titles` used to be on this
+   list and are done; `$titlepage`, `$sectionpages` and `$toc` are the
+   precedent for the rest — computed in Python and injected whole, which is
+   how `string.Template` gets away with having no conditionals.
 2. **`##` → `\begin{block}{...}`** — the one `TODO` in the code. Needs grouping
    a heading with its following siblings, since Markdown gives no nesting.
 3. **Pipe tables.** No `render_table` at all; a GFM table falls through to raw

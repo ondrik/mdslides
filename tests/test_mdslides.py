@@ -298,48 +298,99 @@ def test_render_heading_below_the_slide_level_stays_in_the_frame(render):
 ###########################################
 
 @pytest.mark.parametrize('level', ['section', 'subsection', 'part'])
-def test_section_separator_is_the_slide_when_empty(render, level):
-    """A bare '{.section}' heading opens the section and beamer's own page
-template becomes the separator slide."""
+def test_section_opens_the_level_and_takes_no_frame(render, level):
+    """A bare '{.section}' heading opens the sectioning level and nothing
+else; the separator slide is hooked onto it in the preamble."""
     body = render('# Part II {.%s}\n\n# Basics\ncontent\n' % level)
     assert '\\%s{Part II}' % level in body
-    assert '\\frame{\\%spage}' % level in body
-    # the separator is not wrapped in a frame of its own
-    assert body.count('\\begin{frame}') == 1
+    assert body.count('\\begin{frame}') == 1        # only "Basics"
 
 
-def test_section_separator_comes_before_its_own_content(render):
-    """Content under the heading is not dropped: it follows the page."""
+def test_section_content_becomes_the_slide_after_it(render):
+    """Content under the heading is not dropped."""
     body = render('# Part II {.section}\ncustom text\n\n# Basics\nx\n')
-    assert body.index('\\section{Part II}') < body.index('\\frame{\\sectionpage}')
-    assert body.index('\\frame{\\sectionpage}') < body.index('custom text')
+    assert body.index('\\section{Part II}') < body.index('custom text')
     assert body.count('\\begin{frame}') == 2
 
 
-def test_section_separator_keeps_other_frame_options(render):
+def test_section_keeps_other_frame_options_for_its_content(render):
     body = render('# Part II {.section .plain}\ncustom\n')
-    assert '\\frame{\\sectionpage}' in body
+    assert '\\section{Part II}' in body
     assert '\\begin{frame}[plain]' in body
 
 
-def test_section_separator_title_may_hold_markdown(render):
-    body = render('# **Part** II {.section}\n')
-    assert '\\section{\\textbf{Part} II}' in body
+def test_section_title_may_hold_markdown(render):
+    assert '\\section{\\textbf{Part} II}' in render('# **Part** II {.section}\n')
 
 
-def test_section_separator_above_the_slide_level(render):
-    """A heading above the slide level is a section already; the class asks
-for the separator slide as well."""
-    body = render('# Part {.section}\n\n## Slide\nx\n', slide_level=2)
-    assert '\\section{Part}' in body
-    assert '\\frame{\\sectionpage}' in body
+def test_section_class_chooses_the_level_above_the_slide_level(render):
+    body = render('# Part {.part}\n\n## Slide\nx\n', slide_level=2)
+    assert '\\part{Part}' in body
 
 
-def test_section_above_the_slide_level_without_the_class(render):
-    """Unchanged behaviour: a section, but no separator slide."""
+def test_section_above_the_slide_level_without_a_class(render):
+    """Unchanged behaviour: a heading above the slide level is a section."""
     body = render('# Part\n\n## Slide\nx\n', slide_level=2)
     assert '\\section{Part}' in body
-    assert 'sectionpage' not in body
+
+
+###########################################
+# Separator slides and the table of contents, from the metadata
+###########################################
+
+def test_section_pages_are_hooked_on_by_default(convert):
+    """As in pandoc. A deck with no sections registers hooks that never
+fire, so the default costs nothing."""
+    result = convert('# S\nx\n')
+    for level in ('Part', 'Section', 'Subsection'):
+        assert '\\AtBegin%s' % level in result
+
+
+def test_section_pages_are_plain_and_unnumbered(convert):
+    """A divider should carry no footline and consume no slide number."""
+    result = convert('# S\nx\n')
+    assert '\\frame[plain,noframenumbering]{\\sectionpage}' in result
+
+
+@pytest.mark.parametrize('source, overrides', [
+    pytest.param('---\nsection-titles: false\n---\n\n# S\nx\n', {},
+                 id='from-the-metadata'),
+    # -V gives a string, which must not read as a non-empty truth
+    pytest.param('# S\nx\n', {'variable': {'section-titles': 'false'}},
+                 id='from-the-command-line'),
+])
+def test_section_pages_can_be_switched_off(convert, source, overrides):
+    """Assert on the hook, not on the word: the template's own comment
+mentions \\AtBeginSection, which a substring check would match."""
+    result = convert(source, **overrides)
+    assert '\\AtBeginSection[]{' not in result
+    assert '\\AtBeginPart{' not in result
+
+
+def test_section_pages_come_before_header_includes(convert):
+    """So that a deck defining its own \\AtBeginSection wins."""
+    result = convert('---\nheader-includes: |\n'
+                     '  \\AtBeginSection[]{\\frame{mine}}\n---\n\n# S\nx\n')
+    assert result.index('\\AtBeginSection[]{\\frame[plain') \
+        < result.index('\\AtBeginSection[]{\\frame{mine}}')
+
+
+def test_toc_is_off_by_default(convert):
+    assert '\\tableofcontents' not in convert('# S\nx\n')
+
+
+def test_toc_when_asked_for(convert):
+    result = convert('---\ntitle: T\ntoc: true\n---\n\n# S\nx\n')
+    assert '\\tableofcontents' in result
+    assert '\\frametitle{Outline}' in result
+    # after the title page, before the slides
+    assert result.index('\\titlepage') < result.index('\\tableofcontents')
+    assert result.index('\\tableofcontents') < result.index('\\begin{frame}{S}')
+
+
+def test_toc_title_can_be_set(convert):
+    result = convert('---\ntoc: true\ntoc-title: "Contents"\n---\n\n# S\nx\n')
+    assert '\\frametitle{Contents}' in result
 
 
 def test_render_thematic_break_starts_an_untitled_frame(render):
@@ -393,6 +444,15 @@ def test_render_loose_list_is_not_marked_tight(render):
 def test_template_defines_tightlist(template):
     """The renderer emits it, so it cannot be left undefined."""
     assert 'providecommand{\\tightlist}' in template
+
+
+@pytest.mark.parametrize('macro', [
+    'hlbl', 'hlgr', 'hlrd', 'hlorg', 'hlgrey', 'hldgr', 'hlvio',
+])
+def test_template_defines_the_highlight_macros(template, macro):
+    """Decks write these in their prose and nothing else defines them, so
+dropping one silently breaks every deck that used it."""
+    assert '\\newcommand{\\%s}' % macro in template
 
 
 def test_render_block_quote(render):
@@ -980,7 +1040,7 @@ def test_render_deck_produces_frames(mdslides, deck, render):
                   if mdslides.split_heading_attributes(line)[2]]
     assert separators, 'expected the example to have a section separator'
     assert result.count('\\begin{frame}') == len(headings) - len(separators)
-    assert result.count('\\frame{\\sectionpage}') == len(separators)
+    assert result.count('\\section{') == len(separators)
     assert result.count('\\begin{frame}') == result.count('\\end{frame}')
 
 
@@ -1043,9 +1103,16 @@ def test_variables_pass_metadata_through(mdslides):
 
 
 def test_variables_supply_defaults(mdslides):
+    """Every variable the template may mention has to resolve to something."""
     variables = mdslides.build_variables({}, '')
+    assert set(mdslides.TEMPLATE_DEFAULTS) <= set(variables)
+
+    # These three are computed from the metadata rather than taken from the
+    # defaults, and have tests of their own.
+    computed = {'titlepage', 'sectionpages', 'toc'}
     for name, value in mdslides.TEMPLATE_DEFAULTS.items():
-        assert variables[name] == value
+        if name not in computed:
+            assert variables[name] == value
 
 
 def test_variables_ignore_empty_metadata_entries(mdslides):

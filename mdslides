@@ -49,7 +49,25 @@ TEMPLATE_DEFAULTS = {
     'date': '',
     'headerincludes': '',
     'titlepage': '',
+    'sectionpages': '',
+    'toc': '',
 }
+
+# The separator slide hooked onto each sectioning level when 'section-titles'
+# is on.  [plain,noframenumbering] is what a divider wants: no headline or
+# footline, and it does not consume a slide number.  \...page picks up the
+# theme, so a deck that wants a different look overrides
+# \setbeamertemplate{section page} from its header-includes.
+#
+# \frame[...]{...} rather than \begin{frame}...\end{frame} so that no frame
+# environment appears in the preamble, where it would be counted by anything
+# looking for the document's slides.
+DEFAULT_TOC_TITLE = 'Outline'
+
+SECTION_PAGE_HOOKS = '\n'.join(
+    '\\AtBegin%s%s{\\frame[plain,noframenumbering]{\\%spage}}'
+    % (level.capitalize(), '' if level == 'part' else '[]', level)
+    for level in ('part', 'section', 'subsection'))
 
 # Metadata that is a list of people or places, rather than a block of text.
 JOINED_WITH_AND = ('author', 'institute')
@@ -434,6 +452,24 @@ metadata block.
         variables['titlepage'] = '\\frame{\\titlepage}'
     else:
         variables['titlepage'] = ''
+
+    # A separator slide for every section, on by default as in pandoc: a deck
+    # with no sections registers hooks that never fire, so it costs nothing.
+    if as_bool(meta.get('section-titles'), True):
+        variables['sectionpages'] = SECTION_PAGE_HOOKS
+    else:
+        variables['sectionpages'] = ''
+
+    # A table of contents, off by default -- it is only worth a slide once
+    # the deck has sections to list.
+    if as_bool(meta.get('toc'), False):
+        # 'toc-title' cannot be a template variable of its own: the hyphen is
+        # not an identifier, so string.Template could never reach it.
+        variables['toc'] = ('\\begin{frame}\n\\frametitle{%s}\n'
+                            '\\tableofcontents\n\\end{frame}'
+                            % (meta.get('toc-title') or DEFAULT_TOC_TITLE))
+    else:
+        variables['toc'] = ''
 
     variables['slides'] = slides
     return variables
@@ -889,10 +925,8 @@ happens inside `inline code', where the text is meant to be literal.
                 title, _, sectioning = split_heading_attributes(
                     self.render_children(heading))
                 # a heading above the slide level is a section already; a
-                # sectioning class on it asks for the separator slide too
+                # sectioning class on it only says which level
                 parts.append('\\%s{%s}\n' % (sectioning or 'section', title))
-                if sectioning:
-                    parts.append('\\frame{\\%spage}\n' % sectioning)
             else:
                 parts.append(self.render_frame(heading, nodes))
         return '\n'.join(parts)
@@ -941,12 +975,13 @@ frame, and a thematic break starts a frame with no title.
 
         separator = ''
         if sectioning:
-            # open the section, and let beamer's own page template be the
-            # separator slide
-            separator = '\\%s{%s}\n\\frame{\\%spage}\n' % (
-                sectioning, title, sectioning)
+            # Only open the sectioning level; the separator slide itself is
+            # hooked onto it in the preamble, by $sectionpages, so that
+            # 'section-titles: false' can switch every one of them off and a
+            # section made by a heading above the slide level gets one too.
+            separator = '\\%s{%s}\n' % (sectioning, title)
             if not any(node.get_type() != 'BlankLine' for node in nodes):
-                return separator            # the section page is the slide
+                return separator            # nothing else on this slide
 
         if contains_verbatim(nodes) and 'fragile' not in options:
             options.insert(0, 'fragile')

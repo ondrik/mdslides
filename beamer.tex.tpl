@@ -58,6 +58,10 @@
 \newcommand{\hlorg}[1]{\textcolor{Orange}{#1}}
 \newcommand{\hlgrey}[1]{\textcolor{black!50}{#1}}
 \newcommand{\hldgr}[1]{\textcolor{olive!20!green}{#1}}
+%% The third accent of the prosper decks these replace, where it was
+%% \newrgbcolor{ahmviolet}{0.7 0.0 0.35}; given as rgb rather than as a
+%% dvipsnames name because none of them is this colour.
+\newcommand{\hlvio}[1]{\textcolor[rgb]{0.7,0,0.35}{#1}}
 
 
 
@@ -74,6 +78,12 @@
 \newcommand{\xpause}[0]{\pause}
 \newcommand{\pausex}[0]{\xpause}
 % \newcommand{\xpause}[0]{}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% metadata: section-titles.  A separator slide for each sectioning level,
+%% empty when switched off.  Before header-includes, so that a deck defining
+%% its own \AtBeginSection wins.
+$sectionpages
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% metadata: header-includes.  Last in the preamble, so that whatever it
@@ -97,6 +107,9 @@ $headerincludes
 
 %% Empty when the deck has no title, or sets 'titlepage: false'.
 $titlepage
+
+%% metadata: toc.  Empty unless asked for.
+$toc
 
 $slides
 

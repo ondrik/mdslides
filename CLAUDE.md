@@ -10,7 +10,7 @@ where the text is meant to be literal.
 
     mdslides deck.md -o deck.tex     # convert
     mdslides --pdf deck.md           # convert and build the PDF
-    pytest                           # 261 tests
+    pytest                           # the suite; all of it should pass
 
 Dependencies are in `requirements.txt`: `marko` and `PyYAML`, both hard
 imports. `pytest` for the tests and a TeX installation for `--pdf` are noted

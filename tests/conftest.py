@@ -80,6 +80,8 @@ while @$workSet \neq \emptyset$@:
   @$st$@ := @$workSet.getAndRemove$@()      // many ways to implement
 ```
 
+# Part II: Layout {.section}
+
 # Columns
 @columns
 @column 0.4

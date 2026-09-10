@@ -78,6 +78,11 @@ LATEX_SPECIALS = set('#$%&_{}')
 FRAME_OPTIONS = ('fragile', 'plain', 'allowframebreaks', 'shrink', 'squeeze',
                  'noframenumbering', 't', 'b', 'c')
 
+# Classes that make a heading open a sectioning level and produce a separator
+# slide for it: '# Part II {.section}'.  Beamer has a page template for each,
+# so \section is followed by \frame{\sectionpage} and so on.
+SECTIONING_CLASSES = ('part', 'section', 'subsection')
+
 # A trailing attribute list on a heading: '{.fragile}', '{label=intro}'.  The
 # tokens have to look like attributes, so that a title ending in \hlbl{Foo}
 # is not mistaken for one.
@@ -782,27 +787,30 @@ The level of a heading element, or None if it is not a heading.
 
 ###########################################
 def split_heading_attributes(title):
-    """split_heading_attributes(str) -> (str, [str])
+    """split_heading_attributes(str) -> (str, [str], str or None)
 
-Splits a trailing attribute list off a frame title, returning the title and
-the frame options it asks for:
+Splits a trailing attribute list off a frame title, returning the title, the
+frame options it asks for, and the sectioning level it opens, if any:
 
-    'Algorithm {.fragile}'  ->  ('Algorithm', ['fragile'])
+    'Algorithm {.fragile}'  ->  ('Algorithm', ['fragile'], None)
+    'Part II {.section}'    ->  ('Part II',   [],          'section')
 """
     match = HEADING_ATTRS_RE.search(title)
     if not match:
-        return title, []
+        return title, [], None
 
-    options = []
+    options, sectioning = [], None
     for token in match.group(1).split():
-        if token.startswith('.') and token[1:] in FRAME_OPTIONS:
+        if token.startswith('.') and token[1:] in SECTIONING_CLASSES:
+            sectioning = token[1:]
+        elif token.startswith('.') and token[1:] in FRAME_OPTIONS:
             options.append(token[1:])
         elif '=' in token:
             options.append(token)
         elif token.startswith('#'):
             options.append('label=%s' % token[1:])
 
-    return title[:match.start()].rstrip(), options
+    return title[:match.start()].rstrip(), options, sectioning
 
 
 ###########################################
@@ -878,8 +886,13 @@ happens inside `inline code', where the text is meant to be literal.
         parts = []
         for kind, heading, nodes in self.split_slides(element.children):
             if kind == 'section':
-                title, _ = split_heading_attributes(self.render_children(heading))
-                parts.append('\\section{%s}\n' % title)
+                title, _, sectioning = split_heading_attributes(
+                    self.render_children(heading))
+                # a heading above the slide level is a section already; a
+                # sectioning class on it asks for the separator slide too
+                parts.append('\\%s{%s}\n' % (sectioning or 'section', title))
+                if sectioning:
+                    parts.append('\\frame{\\%spage}\n' % sectioning)
             else:
                 parts.append(self.render_frame(heading, nodes))
         return '\n'.join(parts)
@@ -921,9 +934,20 @@ frame, and a thematic break starts a frame with no title.
         """render_frame(Element or None, [Element]) -> str"""
         options = []
         title = ''
+        sectioning = None
         if heading is not None:
-            title, options = split_heading_attributes(
+            title, options, sectioning = split_heading_attributes(
                 self.render_children(heading))
+
+        separator = ''
+        if sectioning:
+            # open the section, and let beamer's own page template be the
+            # separator slide
+            separator = '\\%s{%s}\n\\frame{\\%spage}\n' % (
+                sectioning, title, sectioning)
+            if not any(node.get_type() != 'BlankLine' for node in nodes):
+                return separator            # the section page is the slide
+
         if contains_verbatim(nodes) and 'fragile' not in options:
             options.insert(0, 'fragile')
 
@@ -934,7 +958,7 @@ frame, and a thematic break starts a frame with no title.
             head += '{%s}' % title
 
         body = ''.join(self.render(node) for node in nodes)
-        return '%s\n%s\\end{frame}\n' % (head, body)
+        return '%s%s\n%s\\end{frame}\n' % (separator, head, body)
 
     ####################
     # blocks
@@ -1005,7 +1029,7 @@ frame, and a thematic break starts a frame with no title.
     def render_heading(self, element):
         # A heading below the slide level.  TODO: \begin{block}{...}, which
         # needs the following siblings, not just this element.
-        title, _ = split_heading_attributes(self.render_children(element))
+        title, _, _ = split_heading_attributes(self.render_children(element))
         return '\\textbf{%s}\\par\n' % title
 
     def render_setext_heading(self, element):

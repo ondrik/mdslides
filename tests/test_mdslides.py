@@ -243,17 +243,27 @@ def test_escape_latex(mdslides, text, expected):
 
 
 @pytest.mark.parametrize('title, expected', [
-    pytest.param('Plain', ('Plain', []), id='no-attributes'),
-    pytest.param('Algorithm {.fragile}', ('Algorithm', ['fragile']),
+    pytest.param('Plain', ('Plain', [], None), id='no-attributes'),
+    pytest.param('Algorithm {.fragile}', ('Algorithm', ['fragile'], None),
                  id='fragile'),
     pytest.param('T {.plain .allowframebreaks}',
-                 ('T', ['plain', 'allowframebreaks']), id='two-classes'),
-    pytest.param('T {label=intro}', ('T', ['label=intro']), id='key-value'),
-    pytest.param('T {#intro}', ('T', ['label=intro']), id='identifier'),
-    pytest.param('T {.nosuchoption}', ('T', []), id='unknown-class-dropped'),
+                 ('T', ['plain', 'allowframebreaks'], None), id='two-classes'),
+    pytest.param('T {label=intro}', ('T', ['label=intro'], None),
+                 id='key-value'),
+    pytest.param('T {#intro}', ('T', ['label=intro'], None), id='identifier'),
+    pytest.param('T {.nosuchoption}', ('T', [], None),
+                 id='unknown-class-dropped'),
+    pytest.param('Part II {.section}', ('Part II', [], 'section'),
+                 id='section'),
+    pytest.param('T {.subsection}', ('T', [], 'subsection'), id='subsection'),
+    pytest.param('T {.part}', ('T', [], 'part'), id='part'),
+    pytest.param('T {.section .plain}', ('T', ['plain'], 'section'),
+                 id='section-with-a-frame-option'),
     # a title may legitimately end in a braced LaTeX group
-    pytest.param('A \\hlbl{Foo}', ('A \\hlbl{Foo}', []), id='latex-group'),
-    pytest.param('\\texttt{x}', ('\\texttt{x}', []), id='only-a-latex-group'),
+    pytest.param('A \\hlbl{Foo}', ('A \\hlbl{Foo}', [], None),
+                 id='latex-group'),
+    pytest.param('\\texttt{x}', ('\\texttt{x}', [], None),
+                 id='only-a-latex-group'),
 ])
 def test_split_heading_attributes(mdslides, title, expected):
     assert mdslides.split_heading_attributes(title) == expected
@@ -281,6 +291,55 @@ def test_render_heading_below_the_slide_level_stays_in_the_frame(render):
     result = render('# Slide\n\n## Sub\n\ntext\n')
     assert result.count('\\begin{frame}') == 1
     assert 'Sub' in result
+
+
+###########################################
+# Section separator slides
+###########################################
+
+@pytest.mark.parametrize('level', ['section', 'subsection', 'part'])
+def test_section_separator_is_the_slide_when_empty(render, level):
+    """A bare '{.section}' heading opens the section and beamer's own page
+template becomes the separator slide."""
+    body = render('# Part II {.%s}\n\n# Basics\ncontent\n' % level)
+    assert '\\%s{Part II}' % level in body
+    assert '\\frame{\\%spage}' % level in body
+    # the separator is not wrapped in a frame of its own
+    assert body.count('\\begin{frame}') == 1
+
+
+def test_section_separator_comes_before_its_own_content(render):
+    """Content under the heading is not dropped: it follows the page."""
+    body = render('# Part II {.section}\ncustom text\n\n# Basics\nx\n')
+    assert body.index('\\section{Part II}') < body.index('\\frame{\\sectionpage}')
+    assert body.index('\\frame{\\sectionpage}') < body.index('custom text')
+    assert body.count('\\begin{frame}') == 2
+
+
+def test_section_separator_keeps_other_frame_options(render):
+    body = render('# Part II {.section .plain}\ncustom\n')
+    assert '\\frame{\\sectionpage}' in body
+    assert '\\begin{frame}[plain]' in body
+
+
+def test_section_separator_title_may_hold_markdown(render):
+    body = render('# **Part** II {.section}\n')
+    assert '\\section{\\textbf{Part} II}' in body
+
+
+def test_section_separator_above_the_slide_level(render):
+    """A heading above the slide level is a section already; the class asks
+for the separator slide as well."""
+    body = render('# Part {.section}\n\n## Slide\nx\n', slide_level=2)
+    assert '\\section{Part}' in body
+    assert '\\frame{\\sectionpage}' in body
+
+
+def test_section_above_the_slide_level_without_the_class(render):
+    """Unchanged behaviour: a section, but no separator slide."""
+    body = render('# Part\n\n## Slide\nx\n', slide_level=2)
+    assert '\\section{Part}' in body
+    assert 'sectionpage' not in body
 
 
 def test_render_thematic_break_starts_an_untitled_frame(render):
@@ -914,10 +973,14 @@ def test_directive_listing_inside_makes_the_frame_fragile(render):
 def test_render_deck_produces_frames(mdslides, deck, render):
     _, body = mdslides.split_frontmatter(deck)
     result = render(body)
-    # one frame per '#' heading in the source
-    headings = len([line for line in body.splitlines()
-                    if re.match(r'# \S', line)])
-    assert result.count('\\begin{frame}') == headings
+    # One frame per '#' heading, except that a heading opening a section
+    # produces a separator slide instead of a frame of its own.
+    headings = [line for line in body.splitlines() if re.match(r'# \S', line)]
+    separators = [line for line in headings
+                  if mdslides.split_heading_attributes(line)[2]]
+    assert separators, 'expected the example to have a section separator'
+    assert result.count('\\begin{frame}') == len(headings) - len(separators)
+    assert result.count('\\frame{\\sectionpage}') == len(separators)
     assert result.count('\\begin{frame}') == result.count('\\end{frame}')
 
 

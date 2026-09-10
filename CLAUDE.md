@@ -58,6 +58,27 @@ options; `{#id}` becomes `label=id`; `key=value` passes through. `[fragile]`
 is added automatically to any frame containing verbatim material, so it is
 rarely needed by hand.
 
+**Section separator slides.** `{.section}` on a heading (also `{.subsection}`
+and `{.part}`) opens that sectioning level and produces a separator slide for
+it, using beamer's own page template so it follows the theme:
+
+    # Part II: Symbolic execution {.section}
+
+    ->  \section{Part II: Symbolic execution}
+        \frame{\sectionpage}
+
+It is a heading class rather than a slide level so that it drops into a deck
+whose frames are all `#`, without demoting every heading to `##`. A heading
+*above* the slide level is a section already; the class adds the separator
+slide to it. Give the heading content and it becomes the slide *after* the
+separator, so nothing written under it is dropped, and other classes still
+apply to that slide (`{.section .plain}`).
+
+Do **not** write `\section{...}` as a line of raw LaTeX instead: everything at
+the top level is wrapped into a frame, and a sectioning command has to sit
+between frames, so it either becomes a frame of its own or is absorbed into
+the one above it.
+
 **Environments.** Two syntaxes, and the choice of syntax is what says how the
 contents are treated:
 
@@ -210,7 +231,8 @@ text. The two syntaxes diverged deliberately.
 ## Remaining work
 
 1. **The ignored metadata.** Ten keys parse and are then discarded: `toc` and
-   `section-titles` (no TOC frame, no per-section frame), `colorlinks`,
+   `section-titles` (no TOC frame; separator slides are asked for per heading
+   with `{.section}`, not switched on wholesale), `colorlinks`,
    `linkcolor`, `urlcolor`, `filecolor`, `linkstyle` (the template loads no
    `hyperref` at all), `titlegraphic`, `logo`, and `topic` (which pandoc
    ignores too). `as_bool()` is already in place for the flags. This is the

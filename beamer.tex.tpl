@@ -58,9 +58,6 @@
 \newcommand{\hlorg}[1]{\textcolor{Orange}{#1}}
 \newcommand{\hlgrey}[1]{\textcolor{black!50}{#1}}
 \newcommand{\hldgr}[1]{\textcolor{olive!20!green}{#1}}
-%% The third accent of the prosper decks these replace, where it was
-%% \newrgbcolor{ahmviolet}{0.7 0.0 0.35}; given as rgb rather than as a
-%% dvipsnames name because none of them is this colour.
 \newcommand{\hlvio}[1]{\textcolor[rgb]{0.7,0,0.35}{#1}}
 
 

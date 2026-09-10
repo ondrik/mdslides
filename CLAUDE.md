@@ -85,6 +85,11 @@ and no slide number consumed. `\frame[...]{...}` rather than a `frame`
 environment, so that no `\begin{frame}` appears in the preamble where
 anything counting the deck's slides would find it.
 
+The divider carries **the name alone**. Beamer's own `part`/`section`/
+`subsection page` templates print `\sectionname~\insertsectionnumber` and a
+`\vskip1em` above it — "Section 1" — and the template redefines all three
+with that line dropped, keeping each theme's colours, fonts and box.
+
 **`toc: true`** puts a table of contents after the title page, titled by
 `toc-title` (default `Outline`). That one cannot be a template variable of
 its own — a hyphen is not an identifier, so `string.Template` could never
@@ -190,8 +195,13 @@ reaching LaTeX comments out the rest of its line.
 - **Do not redirect pdflatex's stdout to `<job>.out`** — that is hyperref's
   bookmark file, and clobbering it produces a baffling `Missing { inserted`.
 - `grep -c` counts *lines*, not occurrences (this produced a phantom `\pausex`
-  discrepancy), and the template's own comments can contain the string you are
-  grepping for (a phantom `titlepage`).
+  discrepancy).
+- **The template's own comments contain the strings you search for.** This has
+  produced three false results so far — a phantom `titlepage`, an
+  `AtBeginSection` that was only being explained, and a `\sectionname` in the
+  note saying why `\sectionname` is not used. Any assertion that something is
+  *absent* from the template must go through `without_comments()` in the
+  tests; the same care is needed when grepping by hand.
 - The `opts` fixture must take `mdslides` as a parameter; without it the name
   resolves to nothing and ~120 tests fail at once.
 

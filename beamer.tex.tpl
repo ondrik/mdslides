@@ -25,6 +25,35 @@
 \setbeamertemplate{section in toc}[square]
 \setbeamertemplate{navigation symbols}{}
 
+%% Separator slides carry the name alone. Beamer's own templates print
+%% "Section 1" above it (\sectionname~\insertsectionnumber, then \vskip1em);
+%% these are those templates with that line dropped, so the colours, fonts
+%% and box of whatever theme is in use still apply.
+\setbeamertemplate{part page}{%
+  \begingroup
+    \centering
+    \begin{beamercolorbox}[sep=16pt,center]{part title}
+      \usebeamerfont{part title}\insertpart\par
+    \end{beamercolorbox}
+  \endgroup
+}
+\setbeamertemplate{section page}{%
+  \begingroup
+    \centering
+    \begin{beamercolorbox}[sep=12pt,center]{section title}
+      \usebeamerfont{section title}\insertsection\par
+    \end{beamercolorbox}
+  \endgroup
+}
+\setbeamertemplate{subsection page}{%
+  \begingroup
+    \centering
+    \begin{beamercolorbox}[sep=8pt,center]{subsection title}
+      \usebeamerfont{subsection title}\insertsubsection\par
+    \end{beamercolorbox}
+  \endgroup
+}
+
 \usepackage{$fontfamily}          % metadata: fontfamily
 \usepackage{color}
 \usepackage{graphicx}

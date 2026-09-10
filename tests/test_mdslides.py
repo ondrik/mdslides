@@ -23,6 +23,15 @@ def doc(text):
     return textwrap.dedent(text).lstrip('\n')
 
 
+def without_comments(latex):
+    """without_comments(str) -> str
+
+Strips LaTeX comments.  Asserting that something is *absent* from the
+template is otherwise defeated by the comments explaining why it is absent.
+"""
+    return re.sub(r'(?m)(?<!\\)%.*$', '', latex)
+
+
 ###########################################
 # split_frontmatter() -- recognizing and parsing the metadata block
 ###########################################
@@ -444,6 +453,17 @@ def test_render_loose_list_is_not_marked_tight(render):
 def test_template_defines_tightlist(template):
     """The renderer emits it, so it cannot be left undefined."""
     assert 'providecommand{\\tightlist}' in template
+
+
+@pytest.mark.parametrize('level', ['part', 'section', 'subsection'])
+def test_template_separator_pages_carry_the_name_alone(template, level):
+    """Beamer's own templates print "Section 1" above the name; ours are
+those with that line dropped."""
+    code = without_comments(template)
+    assert '\\setbeamertemplate{%s page}' % level in code
+    assert '\\insert%s\\par' % level in code
+    assert '\\insert%snumber' % level not in code
+    assert '\\%sname' % level not in code
 
 
 @pytest.mark.parametrize('macro', [

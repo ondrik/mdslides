@@ -153,6 +153,11 @@ SPAN_CLASS_RE = re.compile(r'\.([A-Za-z@][-\w@]*)')
 # The macro '==highlighted==' becomes, unless the metadata says otherwise.
 DEFAULT_HIGHLIGHT = 'hlbl'
 
+# A '"' opens a quotation when it follows one of these, or nothing at all,
+# and closes one otherwise.  Deciding from the character before it is what
+# lets "easily" come out as ``easily'' without having to pair the quotes up.
+QUOTE_OPENS_AFTER = set(' \t\n([{<' '‘“–—-/')
+
 # A whole-line '%' comment, stripped before marko runs.  Anything after the
 # first non-blank character being a '%' goes; an escaped '\%' does not match,
 # since the line then starts with a backslash.
@@ -1033,11 +1038,19 @@ happens inside `inline code', where the text is meant to be literal.
     #: the macro '==...==' becomes; set by make_markdown()
     highlight = DEFAULT_HIGHLIGHT
 
+    #: whether '"' becomes a typographic quote; set by make_markdown()
+    smart = True
+
+    #: the last character rendered, so that a quote opening a span of
+    #: emphasis can still tell what came before it
+    _previous = ''
+
     ####################
     # document structure
     ####################
 
     def render_document(self, element):
+        self._previous = ''             # marko reuses the renderer instance
         parts = []
         for kind, heading, nodes in self.split_slides(element.children):
             if kind == 'section':
@@ -1121,6 +1134,10 @@ frame, and a thematic break starts a frame with no title.
     def render_paragraph(self, element):
         # an image alone in a paragraph, with alt text, is a captioned
         # figure; otherwise the alt text would be dropped on the floor
+        # a new paragraph starts a new line as far as quotes are concerned,
+        # or the last word of the one above decides how the first one leans
+        self._previous = '\n'
+
         graphic = lone_graphic(element)
         if graphic is not None and graphic.alt.strip():
             return ('\\begin{figure}\n\\centering\n%s\n\\caption{%s}\n'
@@ -1242,7 +1259,35 @@ frame, and a thematic break starts a frame with no title.
     ####################
 
     def render_raw_text(self, element):
-        return element.children         # straight through to LaTeX
+        return self.smarten(element.children)
+
+    def smarten(self, text):
+        """smarten(str) -> str
+
+Turns a straight '"' into the LaTeX spelling of a typographic one, ``like
+this''.  Whether a quote opens or closes is decided from the character
+before it, so the two do not have to be paired up and an odd one cannot
+send the rest of the deck the wrong way round.
+
+Only prose passes through here, so quotes in `code`, in maths, in listings
+and inside raw LaTeX are left alone without having to be excluded.  A '\\"'
+is a Literal and never reaches this either, which is the way out.
+"""
+        if not self.smart or '"' not in text:
+            self._previous = text[-1:] or self._previous
+            return text
+
+        out = []
+        for char in text:
+            if char == '"':
+                opens = (self._previous == ''
+                         or self._previous in QUOTE_OPENS_AFTER)
+                out.append('``' if opens else "''")
+            else:
+                out.append(char)
+            self._previous = char
+
+        return ''.join(out)
 
     def render_math(self, element):
         return '$%s$' % element.children
@@ -1352,7 +1397,8 @@ because link colours are a property of the document, not of the run.
                      'url_color': url_color,
                      'link_color': link_color,
                      'highlight': str(meta.get('highlight')
-                                      or DEFAULT_HIGHLIGHT)})
+                                      or DEFAULT_HIGHLIGHT),
+                     'smart': as_bool(meta.get('smart'), True)})
     return BeamerMarkdown(renderer=renderer,
                           extensions=[markdown_extension()])
 

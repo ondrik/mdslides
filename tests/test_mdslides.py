@@ -710,6 +710,63 @@ def test_render_escaped_characters(render, source, expected):
 
 
 ###########################################
+# Typographic quotes
+###########################################
+
+def test_quotes_become_typographic(render):
+    body = render('# S\n\ncan be "easily" executed\n')
+    assert "can be ``easily'' executed" in body
+
+
+@pytest.mark.parametrize('source, expected', [
+    pytest.param('"at the start"', "``at the start''", id='opening-a-line'),
+    pytest.param('("in brackets")', "(``in brackets'')", id='after-a-bracket'),
+    pytest.param('"a" and "b"', "``a'' and ``b''", id='two-pairs'),
+    pytest.param('"spanning **bold** text"',
+                 "``spanning \\textbf{bold} text''", id='around-emphasis'),
+    pytest.param('==a "quote" inside==', "\\hlbl{a ``quote'' inside}",
+                 id='inside-a-highlight'),
+])
+def test_quotes_lean_the_right_way(render, source, expected):
+    """Which way a quote leans is decided from the character before it."""
+    assert expected in render('# S\n\n%s\n' % source)
+
+
+def test_quotes_start_of_a_paragraph_opens(render):
+    """Without resetting at a paragraph, the word above would decide."""
+    body = render('# S\n\nended here\n\n"a new paragraph"\n')
+    assert "``a new paragraph''" in body
+
+
+def test_quotes_start_of_a_list_item_opens(render):
+    body = render('# S\n\n* one\n* "second item"\n')
+    assert "``second item''" in body
+
+
+@pytest.mark.parametrize('source, kept', [
+    pytest.param('`"code"`', '\\texttt{"code"}', id='inline-code'),
+    pytest.param('$"maths"$', '$"maths"$', id='maths'),
+    pytest.param('\\texttt{"macro"}', '\\texttt{"macro"}', id='a-macro'),
+    pytest.param('```C\nchar *s = "kept";\n```', '"kept"', id='a-listing'),
+    pytest.param('\\begin{verbatim}\n"kept"\n\\end{verbatim}', '"kept"',
+                 id='verbatim'),
+    pytest.param('an escaped \\" stays', 'an escaped " stays', id='escaped'),
+])
+def test_quotes_left_straight_where_they_are_not_prose(render, source, kept):
+    assert kept in render('# S\n\n%s\n' % source)
+
+
+def test_quotes_can_be_switched_off(convert):
+    result = convert('---\nsmart: false\n---\n\n# S\n\nsaid "hello" twice\n')
+    assert 'said "hello" twice' in result
+
+
+def test_quotes_off_from_the_command_line(convert):
+    result = convert('# S\n\nsaid "hello"\n', variable={'smart': 'false'})
+    assert 'said "hello"' in result
+
+
+###########################################
 # Highlighted text and bracketed spans
 ###########################################
 

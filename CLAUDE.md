@@ -160,6 +160,14 @@ anything still open inside it, as `</ul>` does in HTML. A stray `@end` is
 reported on stderr and dropped. `COMMAND_DIRECTIVES` (`@note`, `@alert`, ...)
 emit `\note{...}` rather than an environment.
 
+**Quotes.** A straight `"` becomes a typographic one — `` ``like this'' ``,
+which LaTeX sets as “like this”. Which way a quote leans is decided from the
+character before it rather than by pairing them up, so an odd one cannot send
+the rest of the deck the wrong way round, and `10"` reads as an inch mark.
+Only prose is touched: quotes in `` `code` ``, in maths, in listings and
+inside raw LaTeX stay straight without having to be excluded, and `\"` is the
+way out. `smart: false` turns it off.
+
 **Highlighted text.** `==like this==` becomes `\hlbl{like this}` — the macro
 is the `highlight` metadata key, `hlbl` by default. It is the spelling the
 deck used before it was LaTeX, and it nests with emphasis either way round:

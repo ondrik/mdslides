@@ -53,7 +53,7 @@ header-includes: |
 * users try ==**input vectors**==, trying to break a program
 * [not true]{.hlrd}, and \hlbl{the macro spelled out} still works
 * \hlbl{pros}:
-  * **complete**: a failing input vector can be executed
+  * **complete**: a failing input vector can be "easily" executed
     * not always easy: concurrency, nondeterministic memory layout, etc.
   * can be directed to some *corner cases*
 \pausex

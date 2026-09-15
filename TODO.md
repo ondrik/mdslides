@@ -63,11 +63,6 @@ keywords via pygments where ours is monochrome with bold keywords. The cheap
 version is a richer `\lstset` in the template (keyword, comment and string
 styles); the faithful version is per-language styling.
 
-**Smart quotes.** An ASCII `"` becomes a typographic quote in pandoc and a
-literal one here, so `"easily"` comes out with two closing quotes. Belongs
-behind a flag rather than on by default, since rewriting the author's
-characters cuts against the passthrough rule.
-
 **`strikethrough` and footnotes.** Marko's GFM elements would make both cheap.
 
 ## Open questions

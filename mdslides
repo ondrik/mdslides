@@ -146,21 +146,12 @@ DIV_FENCE_RE = re.compile(r'(:{3,})[ \t]*(.*?)[ \t]*$', re.MULTILINE)
 # A code fence, so that a ':::' inside a listing is not mistaken for a div.
 CODE_FENCE_RE = re.compile(r'[ \t]*(`{3,}|~{3,})')
 
-# One item of an attribute list: '.class', '#identifier', 'key=value', or a
-# bare word, which pandoc also treats as a class so that ':::  columns'
-# works as shorthand for '::: {.columns}'.
-ATTRIBUTE_RE = re.compile(r"""\s*(?:
-      \.(?P<cls>[-\w:]+)
-    | \#(?P<id>[-\w:]+)
-    | (?P<key>[-\w:]+)[ \t]*=[ \t]*(?P<value>"[^"]*"|'[^']*'|[^\s}]+)
-    | (?P<bare>[-\w:]+)
-)""", re.VERBOSE)
+# The classes of a bracketed span, '[text]{.hlrd .bf}'.  Each becomes a
+# macro wrapped around the text, so the class is the macro name.
+SPAN_CLASS_RE = re.compile(r'\.([A-Za-z@][-\w@]*)')
 
-# Alignment options accepted on \begin{columns}.
-COLUMNS_OPTIONS = ('t', 'b', 'c', 'T', 'onlytextwidth')
-
-# Div classes that map straight onto a Beamer environment taking a title.
-TITLED_ENVIRONMENTS = ('block', 'alertblock', 'exampleblock')
+# The macro '==highlighted==' becomes, unless the metadata says otherwise.
+DEFAULT_HIGHLIGHT = 'hlbl'
 
 # A whole-line '%' comment, stripped before marko runs.  Anything after the
 # first non-blank character being a '%' goes; an escaped '\%' does not match,
@@ -693,6 +684,40 @@ dropped, as pandoc drops it; a caption comes from the alt text instead.
         self.values, self.flags = parse_image_attributes(match.group('attrs'))
 
 
+class Highlight(marko.inline.InlineElement):
+    """Highlighted text, '==like this=='.
+
+Becomes a call to the macro named by the 'highlight' metadata key, `\\hlbl`
+by default.  The delimiters may not sit against whitespace, as with '**', and
+a run of three or more '=' is left alone so that a setext heading underline
+is never mistaken for one.
+"""
+
+    # above emphasis, so that '==**x**==' nests the right way round; below
+    # code spans and maths, so that '$a == b$' is left alone
+    priority = 6
+    pattern = re.compile(r'(?<![=\\])==(?![=\s])((?:[^=\n]|=(?!=))+?)(?<!\s)==(?!=)')
+    parse_children = True
+
+
+class Span(marko.inline.InlineElement):
+    """A bracketed span with attributes, '[text]{.hlrd}'.
+
+Each class becomes a macro wrapped around the text, so the class *is* the
+macro name and any macro of your own works without being registered.  With
+several, the first ends up outermost.
+"""
+
+    # above the link parser, or '[text]{...}' would be read as a link label
+    priority = 7
+    pattern = re.compile(r'\[((?:[^\[\]\n]|\\.)+)\]\{([^{}\n]*)\}')
+    parse_children = True
+    parse_group = 1
+
+    def __init__(self, match):
+        self.attributes = match.group(2)
+
+
 class RawLatexInline(marko.inline.InlineElement):
     """A LaTeX macro call in the middle of a sentence, '\\hlbl{...}'.
 
@@ -882,7 +907,7 @@ def markdown_extension():
 The elements above, as an extension to register with marko.
 """
     return marko.helpers.MarkoExtension(
-        elements=[MathDisplay, Math, Graphic, RawLatexInline,
+        elements=[MathDisplay, Math, Graphic, Span, Highlight, RawLatexInline,
                   RawLatexEnvironment, RawLatexMacroLine,
                   Directive, StrayDirectiveEnd])
 
@@ -1004,6 +1029,9 @@ happens inside `inline code', where the text is meant to be literal.
     #: colours for links, '' for none; set by make_markdown()
     url_color = DEFAULT_URL_COLOR
     link_color = DEFAULT_URL_COLOR
+
+    #: the macro '==...==' becomes; set by make_markdown()
+    highlight = DEFAULT_HIGHLIGHT
 
     ####################
     # document structure
@@ -1229,6 +1257,15 @@ frame, and a thematic break starts a frame with no title.
         char = element.children
         return '\\' + char if char in LATEX_SPECIALS else char
 
+    def render_highlight(self, element):
+        return '\\%s{%s}' % (self.highlight, self.render_children(element))
+
+    def render_span(self, element):
+        text = self.render_children(element)
+        for name in reversed(SPAN_CLASS_RE.findall(element.attributes)):
+            text = '\\%s{%s}' % (name, text)   # the first ends up outermost
+        return text
+
     def render_emphasis(self, element):
         return '\\emph{%s}' % self.render_children(element)
 
@@ -1313,7 +1350,9 @@ because link colours are a property of the document, not of the run.
                     {'slide_level': opts.slide_level,
                      'escapechar': opts.escapechar,
                      'url_color': url_color,
-                     'link_color': link_color})
+                     'link_color': link_color,
+                     'highlight': str(meta.get('highlight')
+                                      or DEFAULT_HIGHLIGHT)})
     return BeamerMarkdown(renderer=renderer,
                           extensions=[markdown_extension()])
 

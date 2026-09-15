@@ -160,6 +160,20 @@ anything still open inside it, as `</ul>` does in HTML. A stray `@end` is
 reported on stderr and dropped. `COMMAND_DIRECTIVES` (`@note`, `@alert`, ...)
 emit `\note{...}` rather than an environment.
 
+**Highlighted text.** `==like this==` becomes `\hlbl{like this}` — the macro
+is the `highlight` metadata key, `hlbl` by default. It is the spelling the
+deck used before it was LaTeX, and it nests with emphasis either way round:
+`==**x**==` and `**==x==**` both work. The delimiters may not sit against
+whitespace, as with `**`, so `a == b` is arithmetic; a run of three or more
+`=` is left alone, so a setext heading underline is safe; and `$a == b$` and
+`` `a == b` `` are claimed by maths and code first.
+
+**Bracketed spans.** `[text]{.hlrd}` becomes `\hlrd{text}` — the class *is*
+the macro name, so any macro of your own works without being registered, and
+several nest with the first outermost (`[x]{.hlbl .hlgr}` → `\hlbl{\hlgr{x}}`).
+The contents are Markdown. Nothing checks that the macro exists, so a typo
+surfaces as an undefined control sequence from LaTeX.
+
 **Links.** `[text](url)` → `\href`, `<url>` → `\url`, and `[text](#label)` →
 `\hyperlink`, which pairs with the `{#label}` heading attribute. All three are
 coloured so they can be told from the prose — `urlcolor` and `linkcolor`

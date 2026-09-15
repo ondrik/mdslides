@@ -710,6 +710,75 @@ def test_render_escaped_characters(render, source, expected):
 
 
 ###########################################
+# Highlighted text and bracketed spans
+###########################################
+
+def test_highlight(render):
+    assert '\\hlbl{like this}' in render('# S\n\n==like this==\n')
+
+
+@pytest.mark.parametrize('source, expected', [
+    pytest.param('==**bold**==', '\\hlbl{\\textbf{bold}}', id='bold-inside'),
+    pytest.param('**==bold==**', '\\textbf{\\hlbl{bold}}', id='bold-outside'),
+    pytest.param('==*em*==', '\\hlbl{\\emph{em}}', id='emphasis-inside'),
+    pytest.param('==$x_1$==', '\\hlbl{$x_1$}', id='maths-inside'),
+    pytest.param('==\\ldots==', '\\hlbl{\\ldots}', id='a-macro-inside'),
+])
+def test_highlight_composes(render, expected, source):
+    assert expected in render('# S\n\n%s\n' % source)
+
+
+@pytest.mark.parametrize('source', [
+    pytest.param('a == b', id='spaced-equals'),
+    pytest.param('$a == b$', id='inside-maths'),
+    pytest.param('`x == y`', id='inside-code'),
+    pytest.param('a ==b', id='unclosed'),
+    pytest.param('|====|', id='a-run-of-equals'),
+])
+def test_highlight_leaves_other_equals_alone(render, source):
+    assert '\\hlbl' not in render('# S\n\n%s\n' % source)
+
+
+def test_highlight_does_not_eat_a_setext_heading(render):
+    """A line of '=' under text is an h1, not a highlight."""
+    body = render('# S\n\nA setext heading\n================\n\ntext\n')
+    assert '\\hlbl' not in body
+
+
+def test_highlight_macro_can_be_chosen(convert):
+    result = convert('---\nhighlight: hlgr\n---\n\n# S\n\n==green==\n')
+    assert '\\hlgr{green}' in result
+    assert '\\hlbl' not in result.split('\\begin{document}')[1]
+
+
+def test_span_wraps_the_text_in_the_class(render):
+    assert '\\hlrd{not true}' in render('# S\n\n[not true]{.hlrd}\n')
+
+
+def test_span_takes_any_macro_name(render):
+    """The class is the macro, so one of your own needs no registration."""
+    assert '\\myownmacro{x}' in render('# S\n\n[x]{.myownmacro}\n')
+
+
+def test_span_with_several_classes_nests_first_outermost(render):
+    assert '\\hlbl{\\hlgr{two}}' in render('# S\n\n[two]{.hlbl .hlgr}\n')
+
+
+def test_span_contents_are_markdown(render):
+    assert '\\hlrd{\\textbf{bold}}' in render('# S\n\n[**bold**]{.hlrd}\n')
+
+
+def test_span_does_not_disturb_links(render):
+    body = render('# S\n\n[text](http://x.org) and [red]{.hlrd}\n')
+    assert '\\href{http://x.org}' in body
+    assert '\\hlrd{red}' in body
+
+
+def test_span_without_a_class_is_just_the_text(render):
+    assert 'plain' in render('# S\n\n[plain]{#anchor}\n')
+
+
+###########################################
 # Links
 ###########################################
 

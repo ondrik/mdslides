@@ -524,6 +524,62 @@ def test_render_an_escaped_percent_survives(render):
     assert '100\\% sure' in render('# S\n\n100\\% sure\n')
 
 
+###########################################
+# '%' line comments, stripped before marko runs
+###########################################
+
+@pytest.mark.parametrize('source', [
+    pytest.param('# S\n\n% a note\n\ntext\n', id='on-its-own'),
+    pytest.param('# S\n\ntext\n% a note\n', id='under-a-paragraph-line'),
+    pytest.param('# S\n\n  % a note\n\ntext\n', id='indented'),
+    pytest.param('# S\n\n%a note\n\ntext\n', id='no-space-after-it'),
+])
+def test_comment_lines_never_reach_the_output(convert, source):
+    result = convert(source)
+    assert 'a note' not in result
+
+
+def test_comment_line_does_not_split_a_paragraph(render):
+    """It is removed, not blanked: a blank line would end the paragraph."""
+    body = render('# S\n\nbefore\n% a note\nafter\n')
+    assert 'before\nafter' in body
+
+
+def test_comment_line_does_not_split_a_list(render):
+    """The reason to prefer '%' over '<!-- -->' for a note."""
+    body = render('# S\n\n* one\n% a note\n* two\n')
+    assert body.count('\\begin{itemize}') == 1
+    assert 'a note' not in body
+
+
+def test_comment_line_does_not_make_a_list_loose(render):
+    body = render('# S\n\n* one\n% a note\n* two\n')
+    assert '\\tightlist' in body
+
+
+@pytest.mark.parametrize('source, kept', [
+    pytest.param('# S\n\n```C\n% not a comment\n```\n', '% not a comment',
+                 id='in-a-fenced-block'),
+    pytest.param('# S\n\n```C\nint r = a % b;\n```\n', 'a % b',
+                 id='modulo-in-code'),
+    pytest.param('# S\n\n```C\nprintf("%d", r);\n```\n', '"%d"',
+                 id='a-printf-format'),
+    pytest.param('# S\n\n\\begin{verbatim}\n% kept\n\\end{verbatim}\n',
+                 '% kept', id='in-a-verbatim-environment'),
+    pytest.param('# S\n\ntext with a % trailing note\n',
+                 'text with a % trailing note', id='partway-along-a-line'),
+    pytest.param('# S\n\n100\\% sure\n', '100\\% sure', id='escaped'),
+])
+def test_a_percent_that_is_not_a_comment_line_is_kept(render, source, kept):
+    assert kept in render(source)
+
+
+def test_comment_lines_are_stripped_before_parsing(mdslides):
+    """strip_comments() runs on the source, so marko never sees them."""
+    assert mdslides.strip_comments('a\n% note\nb\n') == 'a\nb\n'
+    assert mdslides.strip_comments('```\n% kept\n```\n') == '```\n% kept\n```\n'
+
+
 @pytest.mark.parametrize('fence, expected', [
     pytest.param('C', 'language={C}', id='c'),
     pytest.param('haskell', 'language={Haskell}', id='case-insensitive'),
@@ -653,8 +709,58 @@ def test_render_escaped_characters(render, source, expected):
     assert 'x%sy' % expected in body
 
 
+###########################################
+# Links
+###########################################
+
 def test_render_link(render):
-    assert '\\href{http://x.org}{text}' in render('# S\n\n[text](http://x.org)\n')
+    """Coloured by default, so a link can be told from the prose."""
+    body = render('# S\n\n[text](http://x.org)\n')
+    assert '\\href{http://x.org}{\\textcolor{blue}{text}}' in body
+
+
+def test_render_bare_url_is_coloured_too(render):
+    body = render('# S\n\n<http://x.org>\n')
+    assert '\\textcolor{blue}{\\url{http://x.org}}' in body
+
+
+def test_render_internal_link(render):
+    """'[text](#intro)' pairs with the '{#intro}' heading attribute."""
+    body = render('# Intro {#intro}\n\n# S\n\n[back](#intro)\n')
+    assert '\\begin{frame}[label=intro]' in body
+    assert '\\hyperlink{intro}{\\textcolor{blue}{back}}' in body
+
+
+def test_render_link_colour_can_be_chosen(convert):
+    result = convert('---\nurlcolor: "olive!50!green"\n---\n\n'
+                     '# S\n\n[text](http://x.org)\n')
+    assert '\\textcolor{olive!50!green}{text}' in result
+
+
+def test_render_internal_links_have_their_own_colour(convert):
+    result = convert('---\nurlcolor: blue\nlinkcolor: red\n---\n\n'
+                     '# S\n\n[out](http://x.org) [in](#a)\n')
+    assert '\\textcolor{blue}{out}' in result
+    assert '\\textcolor{red}{in}' in result
+
+
+def test_render_links_are_not_coloured_when_switched_off(convert):
+    """'colorlinks: false' leaves them looking like the prose."""
+    result = convert('---\ncolorlinks: false\n---\n\n'
+                     '# S\n\n[text](http://x.org) <http://y.org>\n')
+    # the template defines \hl... in terms of \textcolor{blue}, so assert on
+    # the wrapped link itself rather than on the colour anywhere
+    assert '\\href{http://x.org}{text}' in result
+    assert '\\url{http://y.org}' in result
+    assert '\\textcolor{blue}{text}' not in result
+
+
+def test_render_link_colouring_leaves_the_navigation_alone(convert):
+    """hyperref's colorlinks would repaint beamer's footline as well --
+blue on blue on a dark theme. Only the links in the text are touched."""
+    result = convert('# S\n\n[text](http://x.org)\n')
+    assert 'colorlinks' not in result
+    assert '\\hypersetup' not in result
 
 
 def test_render_image(render):

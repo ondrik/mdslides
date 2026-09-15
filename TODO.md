@@ -30,18 +30,22 @@ desired, so fixing it will fail that test and prompt updating the document.
 
 ## Features not built
 
-**The ignored metadata.** Eight keys parse and are then discarded:
+**The ignored metadata.** Five keys parse and are then discarded:
 
 | Key | What it would take |
 |---|---|
-| `colorlinks`, `linkcolor`, `urlcolor`, `filecolor`, `linkstyle` | the template loads no `hyperref` at all |
+| `filecolor`, `citecolor` | nothing is emitted that would use them — no file or citation links |
+| `linkstyle` | pandoc's bold/underline link styling, which has no equivalent here |
 | `titlegraphic`, `logo` | a `\titlegraphic`/`\logo` line, guarded |
-| `topic` | nothing — pandoc ignores it too; drop it from the list |
 
-`$titlepage`, `$sectionpages` and `$toc` are the precedent: computed in Python
-and injected whole, which is how `string.Template` gets away with having no
-conditionals. This was the biggest hole when it was ten keys; the hyperref
-group is what is left of it.
+`topic` was on this list and is off it: pandoc ignores it too, so there is
+nothing to do. `colorlinks`, `urlcolor` and `linkcolor` are honoured now, as
+are `toc` and `section-titles`.
+
+`$titlepage`, `$sectionpages` and `$toc` are the precedent for whatever is
+left: computed in Python and injected whole, which is how `string.Template`
+gets away with having no conditionals. This was the biggest hole when it was
+ten keys; what remains is small and mostly not worth doing.
 
 **`##` → `\begin{block}{...}`** — the one `TODO` left in the code
 (`render_heading`). A heading below the slide level currently renders as
@@ -70,12 +74,12 @@ characters cuts against the passthrough rule.
 
 **The template engine.** `string.Template` has no conditionals, so every
 optional preamble block has to be computed in Python and injected whole. That
-has been fine three times over ($titlepage, $sectionpages, $toc) and the
-pattern is clear, but the hyperref group above is five keys that all want the
-same `\hypersetup` line built conditionally. Worth deciding whether to keep
-going this way or swap in a small `$if()$`/`$for()$` engine — pandoc's own
-Beamer template would then be usable directly, which is how `beamer-template.tex`
-came to be in the repository in the first place.
+has been fine three times over (`$titlepage`, `$sectionpages`, `$toc`) and the
+pattern is clear. What is left that would want conditionals is small — the
+keys above — so the pressure that would have forced this decision has largely
+gone. Worth deciding on its merits rather than under duress: a small
+`$if()$`/`$for()$` engine would make pandoc's own Beamer template usable
+directly, which is why a copy of it used to sit in this repository.
 
 **Markdown in metadata values.** `title: '**Lecture 7**'` emits literal
 asterisks today, because metadata reaches the template as it stands. Parsing

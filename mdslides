@@ -65,6 +65,13 @@ TEMPLATE_DEFAULTS = {
 # looking for the document's slides.
 DEFAULT_TOC_TITLE = 'Outline'
 
+# Links are coloured so that they can be told from the prose around them.
+# Only the links in the text are touched, never beamer's own navigation:
+# hyperref's colorlinks would repaint the footline too, which on a dark
+# theme makes it unreadable -- blue on blue.  A deck that wants hyperref's
+# global behaviour can still \hypersetup from its header-includes.
+DEFAULT_URL_COLOR = 'blue'
+
 SECTION_PAGE_HOOKS = '\n'.join(
     '\\AtBegin%s%s{\\frame[plain,noframenumbering]{\\%spage}}'
     % (level.capitalize(), '' if level == 'part' else '[]', level)
@@ -154,6 +161,18 @@ COLUMNS_OPTIONS = ('t', 'b', 'c', 'T', 'onlytextwidth')
 
 # Div classes that map straight onto a Beamer environment taking a title.
 TITLED_ENVIRONMENTS = ('block', 'alertblock', 'exampleblock')
+
+# A whole-line '%' comment, stripped before marko runs.  Anything after the
+# first non-blank character being a '%' goes; an escaped '\%' does not match,
+# since the line then starts with a backslash.
+COMMENT_LINE_RE = re.compile(r'[ \t]*%')
+
+# A fenced code block, and a verbatim LaTeX environment: the two places where
+# a leading '%' is content rather than a comment.
+CODE_FENCE_RE = re.compile(r'[ \t]{0,3}(`{3,}|~{3,})')
+VERBATIM_BEGIN_RE = re.compile(
+    r'[ \t]*\\begin\{(lstlisting|verbatim|Verbatim|alltt|minted'
+    r'|semiverbatim|comment)\}')
 
 # An image, with an optional title and an optional attribute list:
 #   ![alt](figure.png "title"){ width=0.8 }
@@ -373,6 +392,63 @@ numbers in the body still match the input file.
                  % (PROG, type(meta).__name__))
 
     return meta, '\n' * match.group(0).count('\n') + text[match.end():]
+
+
+###########################################
+def strip_comments(text):
+    """strip_comments(str) -> str
+
+Removes whole-line '%' comments before marko sees them, so that a note to
+yourself never reaches the output at all.  A line counts as a comment when
+its first character other than whitespace is a '%'.
+
+The line is removed rather than blanked: a blank line would end a paragraph
+and make a list loose, so blanking would let a comment change the slide
+around it.  Line numbers therefore shift, which nothing reports on yet.
+
+Two places a leading '%' is content and is left alone: inside a fenced code
+block, where it may be Matlab or a printf format, and inside a verbatim
+LaTeX environment written out by hand.  An inline '%' partway along a line
+is also left alone -- it would be too easy to eat the rest of an
+`inline code` span -- and still reaches LaTeX, where it is still a comment.
+"""
+    kept = []
+    fence = None                # the backticks or tildes that opened a block
+    verbatim = None             # the name of a verbatim environment
+
+    for line in text.splitlines(keepends=True):
+        if fence is not None:
+            kept.append(line)
+            match = CODE_FENCE_RE.match(line)
+            if match and match.group(1)[0] == fence[0] \
+                    and len(match.group(1)) >= len(fence):
+                fence = None
+            continue
+
+        if verbatim is not None:
+            kept.append(line)
+            if re.match(r'[ \t]*\\end\{%s\}' % re.escape(verbatim), line):
+                verbatim = None
+            continue
+
+        match = CODE_FENCE_RE.match(line)
+        if match:
+            fence = match.group(1)
+            kept.append(line)
+            continue
+
+        match = VERBATIM_BEGIN_RE.match(line)
+        if match:
+            verbatim = match.group(1)
+            kept.append(line)
+            continue
+
+        if COMMENT_LINE_RE.match(line):
+            continue            # a comment: drop it
+
+        kept.append(line)
+
+    return ''.join(kept)
 
 
 ###########################################
@@ -925,6 +1001,10 @@ happens inside `inline code', where the text is meant to be literal.
     #: escape character for ```lstlisting fences; set by make_markdown()
     escapechar = LISTINGS_ESCAPECHAR
 
+    #: colours for links, '' for none; set by make_markdown()
+    url_color = DEFAULT_URL_COLOR
+    link_color = DEFAULT_URL_COLOR
+
     ####################
     # document structure
     ####################
@@ -1158,12 +1238,23 @@ frame, and a thematic break starts a frame with no title.
     def render_code_span(self, element):
         return '\\texttt{%s}' % escape_latex(element.children)
 
+    def coloured(self, text, colour):
+        """coloured(str, str) -> str: the text, in `colour' if there is one."""
+        return '\\textcolor{%s}{%s}' % (colour, text) if colour else text
+
     def render_link(self, element):
+        body = self.render_children(element)
+        if element.dest.startswith('#'):
+            # '[text](#intro)' pairs with the '{#intro}' heading attribute,
+            # which beamer turns into label=intro
+            return '\\hyperlink{%s}{%s}' % (
+                element.dest[1:], self.coloured(body, self.link_color))
         return '\\href{%s}{%s}' % (element.dest.replace('%', '\\%'),
-                                   self.render_children(element))
+                                   self.coloured(body, self.url_color))
 
     def render_auto_link(self, element):
-        return '\\url{%s}' % element.dest.replace('%', '\\%')
+        return self.coloured('\\url{%s}' % element.dest.replace('%', '\\%'),
+                             self.url_color)
 
     def render_image(self, element):
         # a reference-style image, '![alt][ref]', which carries no attributes
@@ -1188,16 +1279,42 @@ frame, and a thematic break starts a frame with no title.
 
 
 ###########################################
-def make_markdown(opts):
-    """make_markdown(argparse.Namespace) -> marko.Markdown
+class BeamerMarkdown(marko.Markdown):
+    """marko.Markdown with the '%' comment lines taken out of the source.
+
+parse() is the hook marko documents for preprocessing the text, and doing it
+here rather than in convert() means anything that parses a document gets it,
+the tests included.
+"""
+
+    def parse(self, text):
+        return super().parse(strip_comments(text))
+
+
+###########################################
+def make_markdown(opts, meta=None):
+    """make_markdown(argparse.Namespace, dict) -> marko.Markdown
 
 marko instantiates the renderer itself, so the options it needs are handed
-over as class attributes of a throwaway subclass.
+over as class attributes of a throwaway subclass.  The metadata comes in
+because link colours are a property of the document, not of the run.
 """
+    meta = meta or {}
+
+    # 'colorlinks: false' leaves links looking like the prose around them;
+    # 'urlcolor'/'linkcolor' choose the colour, as they do in pandoc.
+    if as_bool(meta.get('colorlinks'), True):
+        url_color = str(meta.get('urlcolor') or DEFAULT_URL_COLOR)
+        link_color = str(meta.get('linkcolor') or url_color)
+    else:
+        url_color = link_color = ''
+
     renderer = type('_BeamerRenderer', (BeamerRenderer,),
                     {'slide_level': opts.slide_level,
-                     'escapechar': opts.escapechar})
-    return marko.Markdown(renderer=renderer,
+                     'escapechar': opts.escapechar,
+                     'url_color': url_color,
+                     'link_color': link_color})
+    return BeamerMarkdown(renderer=renderer,
                           extensions=[markdown_extension()])
 
 
@@ -1213,7 +1330,7 @@ Converts the Markdown source `text' into a complete Beamer document.
     # that '-V title=...' also reaches the short title in the footline.
     meta.update(opts.variable)
 
-    markdown = make_markdown(opts)
+    markdown = make_markdown(opts, meta)
     ast = markdown.parse(body)
     if opts.dump_ast:
         for child in ast.children:

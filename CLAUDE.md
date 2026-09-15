@@ -160,6 +160,13 @@ anything still open inside it, as `</ul>` does in HTML. A stray `@end` is
 reported on stderr and dropped. `COMMAND_DIRECTIVES` (`@note`, `@alert`, ...)
 emit `\note{...}` rather than an environment.
 
+**Links.** `[text](url)` → `\href`, `<url>` → `\url`, and `[text](#label)` →
+`\hyperlink`, which pairs with the `{#label}` heading attribute. All three are
+coloured so they can be told from the prose — `urlcolor` and `linkcolor`
+choose the colour, `colorlinks: false` turns it off. Only the links in the
+text are coloured, never beamer's own navigation: hyperref's `colorlinks`
+would repaint the footline too, which on a dark theme puts blue on blue.
+
 **Images.** `![alt](f.png){width=0.8 clip}` → `\includegraphics`. A bare
 number is a fraction of the slide; anything else is a length. Unknown keys and
 bare flags pass through. An image alone in a paragraph *with* alt text becomes
@@ -174,30 +181,43 @@ rather than a LaTeX error.
 **Maths** `$...$` and `$$...$$` are claimed before emphasis, which is what
 keeps `$pc_1 \land pc_2$` intact.
 
-**Comments.** Two syntaxes, which behave differently.
+**Comments.** `%` on a line of its own is the everyday one:
 
-`<!-- ... -->` is dropped and never reaches LaTeX. It works as a block, over
-several lines, inline in the middle of a sentence, and around a whole slide,
-which is how a deck parks the slides it is not giving today.
+    * users try **input vectors**
+    % remember to mention the KLEE paper
+    * pros:
 
-A `%` is *passed through*, and LaTeX then treats it as a comment — so it
-works, but it silently eats the rest of the line, which is the trap behind
-"no percentages" below. Write `\%` for a literal percent sign.
+`strip_comments()` removes such lines from the source before marko runs, so
+they reach neither the `.tex` nor the PDF. The line is *removed* rather than
+blanked, because a blank line would end a paragraph and make a list loose —
+a comment must not change the slide around it. Line numbers therefore shift,
+which nothing reports on yet.
 
-Neither applies inside a code fence: `/* ... */` and `//` there are content
-and are typeset as written. In the metadata block, `<!-- ... -->` lines are
-stripped before the YAML is parsed, which is how a metadata line is disabled.
+A `%` is only a comment when it is the first thing on the line. Partway along
+one it is left alone and passed through, where LaTeX still treats it as a
+comment — eating the rest of that line, which is the trap behind "no
+percentages" below. Write `\%` for a literal percent sign. Two places a
+leading `%` is content and is left alone: inside a fenced code block, where
+it may be Matlab or a `printf` format, and inside a verbatim LaTeX
+environment written out by hand.
 
-**A comment at column 0 between list items splits the list in two**, because
-an HTML block interrupts a list the way any other block would:
+`<!-- ... -->` also works and is dropped, and it is the one to use for a
+block: over several lines, inline mid-sentence, or around a whole slide,
+which is how a deck parks the slides it is not giving today. **But at column
+0 between list items it splits the list in two**, because an HTML block
+interrupts a list the way any other block would:
 
     * one
     <!-- note -->        two \begin{itemize} blocks, one item in each
     * two
 
-Indent it to the item's own content and the list stays whole. This is the
-same mechanism that makes a `\pausex` at column 0 behave differently from an
-indented one.
+Indent it to the item's own content and the list stays whole — the same
+mechanism that makes a `\pausex` at column 0 behave differently from an
+indented one. A `%` line has no such problem, which is the reason to prefer
+it for a one-line note.
+
+In the metadata block, `<!-- ... -->` lines are stripped before the YAML is
+parsed, which is how a metadata line is disabled.
 
 **No percentages anywhere.** Widths are bare fractions or lengths. A `%`
 reaching LaTeX comments out the rest of its line.

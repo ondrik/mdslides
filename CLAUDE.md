@@ -95,6 +95,23 @@ with that line dropped, keeping each theme's colours, fonts and box.
 its own — a hyphen is not an identifier, so `string.Template` could never
 reach `$toc-title`.
 
+**The title slide.** `title`, `subtitle`, `author`, `institute` and `date`
+reach beamer's own title page. For a lecture deck the natural split is the
+lesson in the title and the course beneath it:
+
+    title:    'Symbolic Execution'
+    subtitle: 'SAV --- Static Analysis and Verification'
+
+Metadata values are **not** parsed as Markdown — they go into the template as
+they stand — but that means LaTeX in them works, so a title can carry
+`\textbf{...}`, `$maths$` and `\\` for a line break:
+
+    title: 'Lecture 7\\Symbolic Execution'
+
+Single-quote it, or YAML eats the backslashes. Beware that `short-title`
+then inherits the `\\` and the footline runs the words together; give an
+explicit `short-title` until that is fixed.
+
 **Short forms.** `short-title`, `short-author`, `short-institute` and
 `short-date` are what beamer puts in the footline, and each falls back to its
 long form when the deck does not give one. Giving one **explicitly empty**
@@ -312,7 +329,11 @@ text. The two syntaxes diverged deliberately.
    literal one here, so `"easily"` comes out with two closing quotes. Belongs
    behind a flag, since rewriting the author's characters cuts against the
    passthrough rule.
-6. **A README.** The input format above is the only documentation there is,
+6. **`short-title` inherits a multi-line title.** `title: 'A\\B'` sets the
+   footline to `\title[A\\B]`, where beamer swallows the break and prints
+   `AB`. Deriving the short form by turning `\\` into a space would fix it;
+   an explicit `short-title` is the workaround meanwhile.
+7. **A README.** The input format above is the only documentation there is,
    and it is in a file aimed at whoever picks the work up rather than at
    whoever wants to use the tool. Also `strikethrough` and footnotes, which
    marko's GFM elements would make cheap.

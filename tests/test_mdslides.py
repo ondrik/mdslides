@@ -1337,6 +1337,25 @@ def test_titlepage_can_be_forced_without_a_title(mdslides):
     assert variables['titlepage'] == TITLEPAGE
 
 
+def test_subtitle_reaches_the_document(convert):
+    """A lecture deck puts the lesson in the title and the course here."""
+    result = convert('---\ntitle: "Symbolic Execution"\n'
+                     'subtitle: "SAV --- Static Analysis"\n---\n\n# S\nx\n')
+    assert '\\subtitle{SAV --- Static Analysis}' in result
+
+
+def test_subtitle_is_empty_when_not_given(convert):
+    """Beamer skips an empty subtitle, so the command is emitted anyway
+rather than being made conditional."""
+    assert '\\subtitle{}' in convert('---\ntitle: T\n---\n\n# S\nx\n')
+
+
+def test_subtitle_may_hold_latex(convert):
+    result = convert('---\ntitle: T\nsubtitle: "Lecture $7$: \\\\emph{x}"\n'
+                     '---\n\n# S\nx\n')
+    assert '\\subtitle{Lecture $7$: \\emph{x}}' in result
+
+
 def test_titlepage_reaches_the_document(convert):
     result = convert('---\ntitle: T\nauthor: A\n---\n\n# Slide\n')
     assert TITLEPAGE in result

@@ -44,6 +44,7 @@ TEMPLATE_DEFAULTS = {
     # families that do not belong together. lmodern covers both.
     'fontfamily': 'lmodern',
     'title': '',
+    'subtitle': '',
     'author': '',
     'institute': '',
     'date': '',

@@ -122,6 +122,8 @@ $headerincludes
 %% metadata: title, short-title, author, short-author, institute,
 %%           short-institute, date, short-date
 \title[$shorttitle]{$title}
+%% Beamer skips the subtitle when it is empty, so this needs no condition.
+\subtitle{$subtitle}
 \author[$shortauthor]{$author}
 \institute[$shortinstitute]{$institute}
 \date[$shortdate]{$date}

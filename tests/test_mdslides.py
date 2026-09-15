@@ -480,10 +480,48 @@ def test_render_block_quote(render):
 
 
 def test_render_html_comments_are_dropped(render):
-    """This is how the deck's commented-out slides disappear."""
+    """This is how a deck's commented-out slides disappear."""
     result = render('# S\n\n<!-- a comment -->\n\ntext\n')
     assert 'comment' not in result
     assert 'text' in result
+
+
+@pytest.mark.parametrize('source', [
+    pytest.param('# S\n\n<!--\nline one\nline two\n-->\n\ntext\n',
+                 id='several-lines'),
+    pytest.param('# S\n\ntext <!-- aside -->\n', id='inline'),
+    pytest.param('# S\n\ntext\n\n<!-- # Hidden\n\n* not shown\n-->\n',
+                 id='a-whole-slide'),
+])
+def test_render_comment_forms_are_all_dropped(render, source):
+    result = render(source)
+    assert 'text' in result
+    for word in ('line one', 'aside', 'Hidden', 'not shown'):
+        assert word not in result
+
+
+def test_render_a_comment_between_list_items_splits_the_list(render):
+    """Documented rather than desired: an HTML block interrupts a list the
+way any other block would.  Indent it to keep the list whole."""
+    result = render('# S\n\n* one\n<!-- note -->\n* two\n')
+    assert result.count('\\begin{itemize}') == 2
+
+
+def test_render_an_indented_comment_keeps_the_list_whole(render):
+    result = render('# S\n\n* one\n  <!-- note -->\n* two\n')
+    assert result.count('\\begin{itemize}') == 1
+    assert 'note' not in result
+
+
+def test_render_comments_inside_a_listing_are_content(render):
+    result = render('# S\n\n```C\n/* kept */\n// kept\n```\n')
+    assert '/* kept */' in result
+    assert '// kept' in result
+
+
+def test_render_an_escaped_percent_survives(render):
+    """A bare '%' would comment out the rest of the line in LaTeX."""
+    assert '100\\% sure' in render('# S\n\n100\\% sure\n')
 
 
 @pytest.mark.parametrize('fence, expected', [

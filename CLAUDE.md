@@ -156,6 +156,31 @@ rather than a LaTeX error.
 **Maths** `$...$` and `$$...$$` are claimed before emphasis, which is what
 keeps `$pc_1 \land pc_2$` intact.
 
+**Comments.** Two syntaxes, which behave differently.
+
+`<!-- ... -->` is dropped and never reaches LaTeX. It works as a block, over
+several lines, inline in the middle of a sentence, and around a whole slide,
+which is how a deck parks the slides it is not giving today.
+
+A `%` is *passed through*, and LaTeX then treats it as a comment — so it
+works, but it silently eats the rest of the line, which is the trap behind
+"no percentages" below. Write `\%` for a literal percent sign.
+
+Neither applies inside a code fence: `/* ... */` and `//` there are content
+and are typeset as written. In the metadata block, `<!-- ... -->` lines are
+stripped before the YAML is parsed, which is how a metadata line is disabled.
+
+**A comment at column 0 between list items splits the list in two**, because
+an HTML block interrupts a list the way any other block would:
+
+    * one
+    <!-- note -->        two \begin{itemize} blocks, one item in each
+    * two
+
+Indent it to the item's own content and the list stays whole. This is the
+same mechanism that makes a `\pausex` at column 0 behave differently from an
+indented one.
+
 **No percentages anywhere.** Widths are bare fractions or lengths. A `%`
 reaching LaTeX comments out the rest of its line.
 

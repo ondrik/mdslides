@@ -95,6 +95,20 @@ with that line dropped, keeping each theme's colours, fonts and box.
 its own — a hyphen is not an identifier, so `string.Template` could never
 reach `$toc-title`.
 
+**Short forms.** `short-title`, `short-author`, `short-institute` and
+`short-date` are what beamer puts in the footline, and each falls back to its
+long form when the deck does not give one. Giving one **explicitly empty**
+keeps it empty:
+
+    short-institute: ""     ->  \institute[]{...}, so the footline reads
+                                "Ondřej Lengál" and not
+                                "Ondřej Lengál (SAV'25, FIT VUT v Brně)"
+
+which is the only way to ask for nothing there. A key with no value at all
+(`short-institute:`) is YAML `None` and counts as *not given*, so it still
+falls back — the distinction is between absent and empty, not between falsy
+and truthy.
+
 Do **not** write `\section{...}` as a line of raw LaTeX instead: everything at
 the top level is wrapped into a frame, and a sectioning command has to sit
 between frames, so it either becomes a frame of its own or is absorbed into

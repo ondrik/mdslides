@@ -440,8 +440,18 @@ metadata block.
     options.extend(str(option) for option in as_list(meta.get('classoption')))
     variables['classoptions'] = ','.join(options)
 
+    # A short form the deck gives explicitly is kept even when it is empty:
+    # 'short-institute: ""' is how you say "leave the affiliation out of the
+    # footline", and falling back to the long form there would do the
+    # opposite of what it asks.  A key present with no value at all
+    # ('short-institute:') counts as not given, since YAML reads it as None.
+    supplied = set()
+    for key, value in meta.items():
+        if value is not None:
+            supplied.add(key.replace('-', ''))
+
     for short, long in SHORT_FORMS:
-        if not variables.get(short):
+        if short not in supplied:
             variables[short] = variables[long] if long else ''
 
     # A title page, unless the deck has no title to put on one or asks not

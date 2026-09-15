@@ -1205,6 +1205,41 @@ def test_variables_short_institute_can_be_given_explicitly(mdslides):
     assert variables['shortinstitute'] == 'BUT'
 
 
+@pytest.mark.parametrize('short, long, value', [
+    pytest.param('shortinstitute', 'institute', 'FIT VUT', id='institute'),
+    pytest.param('shorttitle', 'title', 'A Long Title', id='title'),
+    pytest.param('shortauthor', 'author', 'Ondřej Lengál', id='author'),
+    pytest.param('shortdate', 'date', '3 November 2025', id='date'),
+])
+def test_variables_an_empty_short_form_is_kept(mdslides, short, long, value):
+    """'short-institute: ""' is how a deck says "leave the affiliation out
+of the footline"; falling back to the long form would do the opposite."""
+    key = short.replace('short', 'short-')
+    variables = mdslides.build_variables({long: value, key: ''}, '')
+    assert variables[short] == ''
+
+
+@pytest.mark.parametrize('key', ['short-institute', 'shortinstitute'])
+def test_variables_short_form_spelling(mdslides, key):
+    """Hyphenated or not, the deck's own value is what counts."""
+    variables = mdslides.build_variables({'institute': 'FIT VUT', key: ''}, '')
+    assert variables['shortinstitute'] == ''
+
+
+def test_variables_a_valueless_short_form_still_falls_back(mdslides):
+    """'short-institute:' with nothing after it is YAML None, not an empty
+string, and reads as "not given"."""
+    variables = mdslides.build_variables(
+        {'institute': 'FIT VUT', 'short-institute': None}, '')
+    assert variables['shortinstitute'] == 'FIT VUT'
+
+
+def test_convert_empty_short_institute_reaches_the_document(convert):
+    result = convert('---\ntitle: T\ninstitute: "FIT VUT"\n'
+                     'short-institute: ""\n---\n\n# S\nx\n')
+    assert '\\institute[]{FIT VUT}' in result
+
+
 @pytest.mark.parametrize('key', ['short-title', 'shorttitle'])
 def test_variables_explicit_short_form_wins(mdslides, key):
     variables = mdslides.build_variables({'title': 'Long', key: 'Short'}, '')

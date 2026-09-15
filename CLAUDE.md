@@ -25,6 +25,7 @@ there too, as comments, so that installing the file does not drag them in.
 | `tests/conftest.py` | fixtures, and `EXAMPLE` — a presentation in miniature |
 | `tests/test_mdslides.py` | the suite |
 | `requirements.txt` | the two runtime dependencies |
+| `TODO.md` | what is missing, wrong, or undecided |
 
 Every commit message is deliberately detailed — `git log` is the fine-grained
 record of *why* each thing is the way it is.
@@ -312,31 +313,11 @@ text. The two syntaxes diverged deliberately.
 
 ## Remaining work
 
-1. **The ignored metadata.** Eight keys parse and are then discarded:
-   `colorlinks`, `linkcolor`, `urlcolor`, `filecolor` and `linkstyle` (the
-   template loads no `hyperref` at all), `titlegraphic`, `logo`, and `topic`
-   (which pandoc ignores too). `toc` and `section-titles` used to be on this
-   list and are done; `$titlepage`, `$sectionpages` and `$toc` are the
-   precedent for the rest — computed in Python and injected whole, which is
-   how `string.Template` gets away with having no conditionals.
-2. **`##` → `\begin{block}{...}`** — the one `TODO` in the code. Needs grouping
-   a heading with its following siblings, since Markdown gives no nesting.
-3. **Pipe tables.** No `render_table` at all; a GFM table falls through to raw
-   text. Marko's GFM elements would supply the parsing.
-4. **Syntax highlighting for code**, the last visual gap against pandoc, which
-   colours keywords via pygments where ours is monochrome.
-5. **Smart quotes.** An ASCII `"` becomes a typographic quote in pandoc and a
-   literal one here, so `"easily"` comes out with two closing quotes. Belongs
-   behind a flag, since rewriting the author's characters cuts against the
-   passthrough rule.
-6. **`short-title` inherits a multi-line title.** `title: 'A\\B'` sets the
-   footline to `\title[A\\B]`, where beamer swallows the break and prints
-   `AB`. Deriving the short form by turning `\\` into a space would fix it;
-   an explicit `short-title` is the workaround meanwhile.
-7. **A README.** The input format above is the only documentation there is,
-   and it is in a file aimed at whoever picks the work up rather than at
-   whoever wants to use the tool. Also `strikethrough` and footnotes, which
-   marko's GFM elements would make cheap.
+`TODO.md` — everything known to be missing, wrong, or undecided, kept there
+rather than here so there is one list and not two that drift apart. The one
+worth knowing before touching the preamble: `string.Template` has no
+conditionals, so an optional block is computed in Python and injected whole,
+the way `$titlepage`, `$sectionpages` and `$toc` are.
 
 ## Conventions
 

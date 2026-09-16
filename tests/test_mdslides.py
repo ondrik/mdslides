@@ -886,6 +886,27 @@ def test_render_bare_url_is_coloured_too(render):
     assert '\\textcolor{blue}{\\url{http://x.org}}' in body
 
 
+@pytest.mark.parametrize('url, expected', [
+    pytest.param('https://x.org/#frag', 'https://x.org/\\#frag',
+                 id='fragment'),
+    pytest.param('https://x.org/?a=1%2Bb', 'https://x.org/?a=1\\%2Bb',
+                 id='percent-encoding'),
+    pytest.param('https://x.org/{a}', 'https://x.org/\\%7Ba\\%7D',
+                 id='braces-are-percent-encoded'),
+    pytest.param('https://x.org/a&b_c~d', 'https://x.org/a&b_c~d',
+                 id='ampersand-underscore-tilde-left-alone'),
+])
+def test_render_url_specials_are_escaped(render, url, expected):
+    """A '#' in a URL is read as a parameter and loses the whole frame:
+'Illegal parameter number in definition of \\iterate'."""
+    assert '\\href{%s}' % expected in render('# S\n\n[t](%s)\n' % url)
+
+
+def test_render_bare_url_specials_are_escaped_too(render):
+    body = render('# S\n\n<https://x.org/#frag>\n')
+    assert '\\url{https://x.org/\\#frag}' in body
+
+
 def test_render_internal_link(render):
     """'[text](#intro)' pairs with the '{#intro}' heading attribute."""
     body = render('# Intro {#intro}\n\n# S\n\n[back](#intro)\n')

@@ -97,6 +97,10 @@ SHORT_FORMS = (('shorttitle', 'title'),
 
 # Characters that have to be escaped where LaTeX is not wanted, i.e. inside
 # `inline code'.  Prose is passed through untouched; see BeamerRenderer.
+# Characters that have to be escaped in a URL before it can be the argument
+# of \href.  A '#' is the one that bites: LaTeX reads it as a parameter.
+URL_ESCAPES = {'#': '\\#', '%': '\\%', '{': '\\%7B', '}': '\\%7D'}
+
 LATEX_ESCAPES = {
     '\\': '\\textbackslash{}', '{': '\\{', '}': '\\}', '$': '\\$',
     '&': '\\&', '#': '\\#', '_': '\\_', '%': '\\%',
@@ -944,6 +948,21 @@ meant to be taken literally, i.e. inside `inline code'.
 
 
 ###########################################
+def escape_url(url):
+    """escape_url(str) -> str
+
+Makes a URL safe as the argument of \\href, which is read as an ordinary
+macro argument: a '#' in it is taken for a parameter, and LaTeX answers
+'Illegal parameter number in definition of \\iterate' and loses the frame.
+
+Braces are percent-encoded rather than backslash-escaped, since a brace has
+to be balanced to survive being read as an argument at all.  '&', '_' and
+'~' are left alone, which is what pandoc does and what hyperref copes with.
+"""
+    return ''.join(URL_ESCAPES.get(char, char) for char in url)
+
+
+###########################################
 def heading_level(element):
     """heading_level(Element) -> int or None
 
@@ -1347,11 +1366,11 @@ is a Literal and never reaches this either, which is the way out.
             # which beamer turns into label=intro
             return '\\hyperlink{%s}{%s}' % (
                 element.dest[1:], self.coloured(body, self.link_color))
-        return '\\href{%s}{%s}' % (element.dest.replace('%', '\\%'),
+        return '\\href{%s}{%s}' % (escape_url(element.dest),
                                    self.coloured(body, self.url_color))
 
     def render_auto_link(self, element):
-        return self.coloured('\\url{%s}' % element.dest.replace('%', '\\%'),
+        return self.coloured('\\url{%s}' % escape_url(element.dest),
                              self.url_color)
 
     def render_image(self, element):

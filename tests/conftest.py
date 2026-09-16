@@ -52,6 +52,8 @@ header-includes: |
 # Lists and text
 * users try ==**input vectors**==, trying to break a program
 * [not true]{.hlrd}, and \hlbl{the macro spelled out} still works
+* a link whose URL has a fragment and an escape:
+  [try it](https://live.example.org/#codez=a%2Bb)
 * \hlbl{pros}:
   * **complete**: a failing input vector can be "easily" executed
     * not always easy: concurrency, nondeterministic memory layout, etc.

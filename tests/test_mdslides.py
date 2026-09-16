@@ -384,6 +384,42 @@ def test_section_pages_come_before_header_includes(convert):
         < result.index('\\AtBeginSection[]{\\frame{mine}}')
 
 
+###########################################
+# handout
+###########################################
+
+HANDOUT = '\\renewcommand{\\xpause}{}'
+
+
+def test_handout_is_off_by_default(convert):
+    assert HANDOUT not in convert('# S\n\ntext\n')
+
+
+def test_handout_from_the_metadata(convert):
+    assert HANDOUT in convert('---\nhandout: true\n---\n\n# S\n\ntext\n')
+
+
+def test_handout_from_the_command_line(convert):
+    assert HANDOUT in convert('# S\n\ntext\n', variable={'handout': 'true'})
+
+
+def test_handout_comes_after_the_definition_it_replaces(convert):
+    """It is a \\renewcommand, so \\xpause has to exist by then."""
+    result = convert('---\nhandout: true\n---\n\n# S\n\ntext\n')
+    assert result.index('\\newcommand{\\xpause}') < result.index(HANDOUT)
+
+
+@pytest.mark.parametrize('key', ['titlepage', 'toc', 'section-titles',
+                                 'handout'])
+def test_a_flag_variable_never_leaks_its_value_into_the_document(convert, key):
+    """-V sets the flag, not the block of LaTeX computed from it: '-V
+toc=false' means no table of contents, not the word 'false' on a slide."""
+    result = convert('---\ntitle: T\n---\n\n# S\n\ntext\n',
+                     variable={key: 'false'})
+    assert '\nfalse\n' not in result
+    assert '\ntrue\n' not in result
+
+
 def test_toc_is_off_by_default(convert):
     assert '\\tableofcontents' not in convert('# S\nx\n')
 

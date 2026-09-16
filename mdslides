@@ -52,7 +52,14 @@ TEMPLATE_DEFAULTS = {
     'titlepage': '',
     'sectionpages': '',
     'toc': '',
+    'handout': '',
 }
+
+# Template variables whose value is a block of LaTeX computed from a
+# metadata flag rather than taken from it.  -V sets the flag, never the
+# block: '-V toc=false' means no table of contents, not the word 'false'
+# printed where one would have been.
+FLAG_VARIABLES = ('titlepage', 'sectionpages', 'toc', 'handout')
 
 # The separator slide hooked onto each sectioning level when 'section-titles'
 # is on.  [plain,noframenumbering] is what a divider wants: no headline or
@@ -542,6 +549,15 @@ metadata block.
         variables['sectionpages'] = SECTION_PAGE_HOOKS
     else:
         variables['sectionpages'] = ''
+
+    # One page per frame: \pausex is defined in terms of \xpause, so
+    # emptying the one silences both and the overlays collapse.  Overlay
+    # specifications written out by hand ('<2->') are untouched; beamer's own
+    # 'classoption: handout' is the blunter instrument for those.
+    if as_bool(meta.get('handout'), False):
+        variables['handout'] = '\\renewcommand{\\xpause}{}'
+    else:
+        variables['handout'] = ''
 
     # A table of contents, off by default -- it is only worth a slide once
     # the deck has sections to list.
@@ -1423,8 +1439,14 @@ Converts the Markdown source `text' into a complete Beamer document.
     slides = markdown.render(ast)
 
     variables = build_variables(meta, slides)
-    # -V can also set a template variable that is not metadata at all
-    variables.update(opts.variable)
+
+    # -V can also set a template variable that is not metadata at all.  The
+    # ones computed from a metadata flag are excluded: -V reached those
+    # through the metadata above, and letting the raw string through as well
+    # would put the word 'false' on a slide where the block should be empty.
+    for key, value in opts.variable.items():
+        if key not in FLAG_VARIABLES:
+            variables[key] = value
 
     return string.Template(template).safe_substitute(variables)
 
@@ -1457,6 +1479,9 @@ def parse_args(argv=None):
                         metavar='CHAR',
                         help="escape character inside ```lstlisting blocks, "
                              "empty to switch it off (default: %(default)s)")
+    parser.add_argument('--handout', action='store_true',
+                        help="one page per frame: silence \\pausex, as "
+                             "'handout: true' in the metadata does")
     parser.add_argument('-p', '--pdf', action='store_true',
                         help="also run latexmk (or pdflatex) on the result; "
                              "without -o the name is taken from the input")
@@ -1477,6 +1502,11 @@ def parse_args(argv=None):
         if not sep:
             parser.error("-V expects KEY=VALUE, got '%s'" % item)
         variables[key.strip()] = value
+
+    # the flag is the same thing as the metadata key, and says so louder
+    if args.handout:
+        variables['handout'] = 'true'
+
     args.variable = variables
 
     # A PDF cannot be made out of stdout, so --pdf needs a real file to

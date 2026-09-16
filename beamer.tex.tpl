@@ -103,7 +103,10 @@
 
 \newcommand{\xpause}[0]{\pause}
 \newcommand{\pausex}[0]{\xpause}
-% \newcommand{\xpause}[0]{}
+
+%% metadata: handout.  Empties \xpause, and with it \pausex, so that every
+%% frame is one page.  After the definitions above, since it redefines them.
+$handout
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% metadata: section-titles.  A separator slide for each sectioning level,

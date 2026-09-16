@@ -113,6 +113,12 @@ Single-quote it, or YAML eats the backslashes. Beware that `short-title`
 then inherits the `\\` and the footline runs the words together; give an
 explicit `short-title` until that is fixed.
 
+**`handout: true`**, or `--handout`, empties `\xpause` and with it `\pausex`,
+so every frame is one page. It replaces the `% \newcommand{\xpause}[0]{}`
+that used to be commented out in the template and uncommented by hand.
+Overlay specifications written out in LaTeX (`<2->`) are untouched — beamer's
+own `classoption: handout` is the blunter instrument for those.
+
 **Short forms.** `short-title`, `short-author`, `short-institute` and
 `short-date` are what beamer puts in the footline, and each falls back to its
 long form when the deck does not give one. Giving one **explicitly empty**

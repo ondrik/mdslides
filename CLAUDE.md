@@ -329,12 +329,11 @@ are three kinds of check worth keeping:
 
 ## Comparing against pandoc
 
-The reference lives outside this repo:
-
-    ../../teaching/sav-private/97-Lectures-OLD/07-Symbolic-Execution/pandoc/
-
-Its `symbolic-execution.md` is byte-identical to the lecture as first
-committed here, which is still recoverable with
+The reference is the pandoc build of the same lecture, which lives outside
+this repository — in the author's teaching repository, alongside the
+`macros.tex`, `stylesheet.tex` and `filter.py3` it needs. Its
+`symbolic-execution.md` is byte-identical to the lecture as first committed
+here, which is still recoverable with
 
     git show 2d20d16:simplified.md
 

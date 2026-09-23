@@ -1409,6 +1409,13 @@ breaklines: long lines ran off the edge of the slide and were clipped.
     assert 'breaklines=true' in template
 
 
+def test_template_loads_xspace(template):
+    """A macro in header-includes that wants the space after it kept
+(\\newcommand{\\KLEE}{KLEE\\xspace}) needs the package loaded here, since
+header-includes comes last and the deck cannot get in before it."""
+    assert '\\usepackage{xspace}' in without_comments(template)
+
+
 def test_render_deck_math_survives_verbatim(mdslides, deck, render):
     """Every maths span in the deck has to come out exactly as written."""
     _, body = mdslides.split_frontmatter(deck)

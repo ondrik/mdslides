@@ -57,6 +57,7 @@
 \usepackage{$fontfamily}          % metadata: fontfamily
 \usepackage{color}
 \usepackage{graphicx}
+\usepackage{xspace}
 
 %% Fenced code blocks become lstlisting, so the package is not optional.
 %% Settings come before header-includes, so that a \lstset of your own wins.

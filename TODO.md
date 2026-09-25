@@ -67,6 +67,101 @@ styles); the faithful version is per-language styling.
 
 ## Open questions
 
+**Per-slide metadata, and what starts a slide.** Nothing can be said about one
+slide except through its heading: `{.fragile}`, `{#id}` and `key=value` on the
+heading line, and that is all. Two things have no way in. A setting that is
+not a frame option — the `\itemsep` of the lists on one slide, say — has
+nowhere to go; and *no* setting at all can reach a frame that has no heading,
+since one started by `---`, or by the text before the first heading, has no
+attribute list to carry it.
+
+The proposal is to let a slide carry a metadata block of its own, and to tell
+it from a thematic break exactly as the document's own block is told from one:
+**by a closing fence.**
+
+    ---
+    title: Why the path condition only ever grows
+    label: growth
+    itemsep: 1.2em
+    options: [t]
+    ---
+
+    * every branch conjoins a constraint
+    * nothing ever removes one
+
+`FRONTMATTER_RE` already requires that closer, which is why a lone `---` at
+the top of a file is a break and a closed one is metadata. Per slide the same
+rule reads: a `---` starts a slide; if what follows parses as YAML and is
+closed by `---` or `...`, it is that slide's metadata; otherwise the `---` was
+a break and nothing more.
+
+The heading stays, as sugar for the commonest field:
+
+    # Why it grows {#growth}    ==    ---
+                                      title: Why it grows
+                                      label: growth
+                                      ---
+
+which is the shape the `@` directives already have — `@column 0.3` is sugar
+for `@column{0.3\textwidth}`, `@block Results` for `@block{Results}`. Most
+slides are a title and five bullets and should go on being written that way;
+the block is what you reach for when the sugar runs out. One model with a
+shorthand, not two syntaxes competing.
+
+The spelling is free. Today a `---`, two `key: value` lines and a `---` parse
+as a thematic break followed by a setext heading, and come out as
+`\textbf{title: Two itemsep: 1em}\par` — nonsense no deck can be relying on.
+
+Three alternatives, considered and set aside, recorded so they are not
+proposed again. `%!` pragma lines (`%! itemsep: 1em`) are mechanically the
+safest of the four, since `strip_comments()` already drops them before marko
+runs, so they cannot interact with paragraphs or lists at all; they lose
+because they read as comments rather than as metadata, and because a title
+does not belong in one. A `+++` fence buys nothing over `---` and costs a
+second marker. Extending the heading's `{...}` further never reaches an
+untitled frame, which is half the problem.
+
+**Two decisions it forces.**
+
+*Is a slide's `title:` parsed as Markdown?* Frame titles are today —
+`# Why $x_1$ matters` and `# **This** one` both work — while metadata values
+deliberately are not. A `title:` key that stands in for a heading has to pick
+a side, and picking "not parsed" means every deck that moves a heading into a
+block silently loses its maths and its emphasis. It is the same question as
+"Markdown in metadata values" below, and the two have to answer it the same
+way.
+
+*The deck stops being plain Markdown.* Anywhere else — GitHub, an editor
+preview — a per-slide block shows up as a rule and a line of stray text,
+where a heading renders as a heading. That is the real price.
+
+**Where it would go.** Pre-parse, beside `split_frontmatter()` and
+`strip_comments()`, not as a marko block element: every scar in this codebase
+comes from a new block construct interacting with paragraphs and lists — the
+HTML comment that splits a list, the `\begin{...}` that has to break a
+paragraph while `\pausex` must not. `split_slides()` would then consume a
+list of (metadata, blocks) groups rather than deriving everything from heading
+level, with the heading filling in `title` when no block gave one. The cost is
+the line numbers shifting, which `strip_comments()` already does and nothing
+reports on yet.
+
+**What works today, meanwhile.** `\tightlist` is emitted inside every tight
+list and `\begin{frame}` is a group, so a slide can already set its own
+spacing without any of this:
+
+    # Results
+
+    \renewcommand{\tightlist}{\setlength{\itemsep}{1.5em}}
+
+    * alpha
+    * beta
+
+Measured on the built PDF, that is 13.55pt between baselines without the line
+and 29.91pt with it, back to 13.55pt on the next slide. A plain
+`\setlength{\itemsep}{1.5em}` before the list does nothing, since `itemize`
+resets it on entry. Only tight lists carry the hook — a loose one stays at
+beamer's own 16.54pt.
+
 **The template engine.** `string.Template` has no conditionals, so every
 optional preamble block has to be computed in Python and injected whole. That
 has been fine three times over (`$titlepage`, `$sectionpages`, `$toc`) and the

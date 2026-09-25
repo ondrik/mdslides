@@ -187,11 +187,14 @@ measured difference in the comparison that was never chased down.
 
 ## Documentation
 
-**A README.** The input format is documented only in `CLAUDE.md`, which is
-aimed at whoever picks the work up rather than at whoever wants to use the
-tool. The `@` directive syntax and the metadata keys are what it needs to
-cover.
+**Both items here are done.** `README.md` documents the input format for
+whoever wants to *use* the tool, where `CLAUDE.md` addresses whoever picks the
+work up — the `@` directive syntax and the metadata keys included, and with
+them the hand-made title slide (`titlepage: false` plus a frame written in the
+body), which worked and was written down nowhere.
 
-**The hand-made title slide.** `titlepage: false` plus a frame written in the
-body gives complete control over the title slide, for anything beamer's own
-title page cannot express. This works today and is written down nowhere.
+What is left is keeping the two in step. `CLAUDE.md` is the older document and
+is wrong in a few places the README had to get right: the `@end` that names
+something is *not* verified, a leading `---` is metadata only when a closing
+fence follows, and a code span is not inviolable — `$...$` and `\macro` are
+claimed ahead of it. Those corrections belong in `CLAUDE.md` too.

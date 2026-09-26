@@ -728,3 +728,8 @@ Three other documents, each with a job the others do not do:
 
 `git log` is the fine-grained record: the commit messages explain why each
 thing is the way it is, and several say what was deliberately left undone.
+
+
+## Licence
+
+MIT — see [`LICENSE`](LICENSE).

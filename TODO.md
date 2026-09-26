@@ -8,6 +8,72 @@ errors. The ordering within each group is roughly by how much it buys.
 
 ## Defects
 
+Everything from here to the `short-title` entry was found by auditing the
+documentation against the source, and none of it was known before. The first
+two lose or hide your work; the next three produce wrong output with no
+warning at all.
+
+**`mdslides --pdf deck.tex` destroys `deck.tex`.** With `--pdf` and no `-o`
+the output name is the input with its extension replaced, so when the input is
+already a `.tex` the two coincide -- and `parse_args` opens the input and then
+truncates the output before anything is read, so the source is gone and the
+body comes out empty. `-o` naming the input does the same. More generally the
+output file is truncated at startup, so any conversion that fails leaves an
+empty file where the old one was. Refusing when the two paths resolve to the
+same file is a few lines.
+
+**`--pdf` hides most LaTeX errors.** `run_latex` passes `-file-line-error`, so
+the engine writes `./deck.tex:150: Undefined control sequence.`, but
+`report_latex_errors` prints only lines beginning with `!`. A typo'd macro
+therefore yields nothing but `mdslides: see /path/deck.log`. Missing-package
+errors are the exception, because TeX does not rewrite those -- which is why
+the existing test passes. Matching the `file:line:` form too is two lines, and
+it is what makes every other defect here diagnosable.
+
+**`$$...$$` corrupts the next `$...$` in the same paragraph.** `A $$y$$ then
+$a _b_ c$` renders as `\[y\] then $a \emph{b} c$`. `Math.pattern` cannot match
+the `$$` opener, so `finditer` matches from its *second* `$`, producing a
+bogus token that intersects the `MathDisplay` one; `_resolve_overlap` drops
+the bogus token, but the region is already consumed and the real inline maths
+never gets one. Invisible when the inline maths holds no Markdown-active
+character. Putting the display in a paragraph of its own avoids it.
+
+**`\(x\)` and `\[y\]` lose their backslashes**, rendering as `(x)` and `[y]`.
+The brackets are ASCII punctuation, so marko's `Literal` claims them, and
+`render_literal` re-emits the backslash only for `LATEX_SPECIALS`. Only the
+`$` spellings work -- which bites hardest because `mdslides` *emits* `\[...\]`,
+so copying its own output back into a source breaks silently.
+
+**An unterminated `\begin{env}` swallows the rest of the file.**
+`RawLatexEnvironment.parse()` loops to the end of the source with no heading
+or frame boundary, unlike a directive, which any heading closes. A three-frame
+deck comes out as one frame with the later headings in it as literal text.
+
+**A `---` break does not close a directive.** It is swallowed into the
+environment and set as `\medskip\hrule\medskip`, the untitled frame it should
+have started never appears, and what follows lands inside the environment too.
+
+**`COMMAND_DIRECTIVES` discard their argument.** `render_directive` computes
+`arguments` and then does not use it on that branch, so `@note remember this`
+loses "remember this" and `@alert[opt]` loses the `[opt]`; only the overlay
+survives. Silent.
+
+**`@end name` closes whatever is open and then misreports it.** The name only
+decides whether the line is consumed, never whether the directive closes, so
+`@end lemma` closes an open `@theorem` exactly as a bare `@end` would. The
+orphaned line then reaches the top level and is reported as `'@end lemma' with
+nothing open` -- which is the opposite of what happened. Exit status stays 0.
+
+**`-V slides=...` replaces the entire body of the deck**, and
+`-V classoptions=...` replaces the computed `\documentclass` options. The four
+`FLAG_VARIABLES` are the only computed names protected from the second `-V`
+pass. Guarding `slides` and `classoptions` too would cost nothing.
+
+**`aspectratio: 16:9` is YAML for the number 969.** It produces a 2902pt-wide
+slide with no error whatsoever; `'16:9'` quoted fails inside beamer with
+`Missing = inserted for \ifnum`. Beamer's spelling is `169`. Nothing validates
+the value.
+
 **`short-title` inherits a multi-line title.** `title: 'A\\B'` renders
 correctly on the title slide but also sets `\title[A\\B]`, and beamer
 swallows the break in the footline, printing `AB`. Deriving the short form by

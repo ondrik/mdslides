@@ -1062,6 +1062,36 @@ def test_math_display(render):
     assert '\\[x = y\\]' in render('# S\n\n$$x = y$$\n')
 
 
+@pytest.mark.parametrize('markdown, expected', [
+    pytest.param('A $$y$$ then $a _b_ c$ end.',
+                 'A \\[y\\] then $a _b_ c$ end.', id='underscores'),
+    pytest.param('A $$y$$ then $a *b* c$ end.',
+                 'A \\[y\\] then $a *b* c$ end.', id='asterisks'),
+    pytest.param('A $$y$$ then $a ==b== c$ end.',
+                 'A \\[y\\] then $a ==b== c$ end.', id='highlight'),
+    pytest.param('A $$y$$ and $$z$$ and $a _b_ c$.',
+                 'A \\[y\\] and \\[z\\] and $a _b_ c$.', id='two-displays'),
+])
+def test_display_maths_leaves_the_next_inline_maths_alone(render, markdown,
+                                                          expected):
+    """Math.pattern could not match a '$$' opener, so finditer() matched from
+its second '$' and consumed the inline maths that followed; the real span then
+got no token and its Markdown-active characters were parsed as markup."""
+    assert expected in render('# S\n\n%s\n' % markdown)
+
+
+def test_inline_maths_still_wins_without_a_display(render):
+    """The guard must not cost the ordinary case."""
+    assert '$a _b_ c$' in render('# S\n\nNo display: $a _b_ c$ end.\n')
+    assert '$pc_1 \\land pc_2$' in render('# S\n\n$pc_1 \\land pc_2$\n')
+
+
+def test_two_inline_spans_with_nothing_between_them(render):
+    """'$x$$y$' is ambiguous -- it could be a display opener. The first span is
+claimed and the second passes through, which LaTeX still typesets."""
+    assert '$x$$y$' in render('# S\n\n$x$$y$\n')
+
+
 def test_math_escaped_dollar_is_not_maths(render):
     """'\\$5' is a dollar sign, and LaTeX spells it '\\$' too."""
     body = render('# S\n\ncosts \\$5 today\n')

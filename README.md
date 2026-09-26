@@ -460,10 +460,11 @@ the errors `--pdf` does not echo: you get only the name of the log.
 
 **Maths.** `$...$` and `$$...$$` are claimed ahead of emphasis, which is what
 keeps `$pc_1 \land pc_2$` and `$a *b* c$` intact. Display maths becomes
-`\[...\]`. Give `$$...$$` a paragraph of its own: a display and an inline
-formula in the same paragraph interfere, and the inline one comes out with its
-underscores and asterisks read as Markdown. Only the `$` spellings work —
-`\(x\)` and `\[y\]` typed in the source silently lose their backslashes.
+`\[...\]`, and a display and an inline formula may share a paragraph. Only the
+`$` spellings work, though — `\(x\)` and `\[y\]` typed in the source silently
+lose their backslashes. Two inline spans written with nothing at all between
+them (`$x$$y$`) are ambiguous, since that could be a display opener: the first
+is claimed and the second passes through, which LaTeX still typesets.
 
 **Highlighting.** `==like this==` becomes `\hlbl{like this}`; the macro is the
 `highlight` metadata key. It nests with emphasis either way round —

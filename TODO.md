@@ -9,16 +9,9 @@ errors. The ordering within each group is roughly by how much it buys.
 ## Defects
 
 Everything from here to the `short-title` entry was found by auditing the
-documentation against the source, and none of it was known before. The first
-two produce wrong output with no warning at all.
-
-**`$$...$$` corrupts the next `$...$` in the same paragraph.** `A $$y$$ then
-$a _b_ c$` renders as `\[y\] then $a \emph{b} c$`. `Math.pattern` cannot match
-the `$$` opener, so `finditer` matches from its *second* `$`, producing a
-bogus token that intersects the `MathDisplay` one; `_resolve_overlap` drops
-the bogus token, but the region is already consumed and the real inline maths
-never gets one. Invisible when the inline maths holds no Markdown-active
-character. Putting the display in a paragraph of its own avoids it.
+documentation against the source, and none of it was known before. Two of
+them — the lost backslashes and the unterminated environment — produce wrong
+output with no warning at all.
 
 **A failed conversion leaves an empty output file.** `parse_args` opens the
 output for writing, which truncates it, before anything is read -- so a deck

@@ -705,10 +705,21 @@ class Math(marko.inline.InlineElement):
 Claimed before emphasis, which is what keeps '$pc_1 \\land pc_2$' intact:
 left to marko those underscores would pair up into emphasis.  A newline ends
 the search, so a stray '$' cannot run away with the rest of the paragraph.
+
+The opening '$' may be neither preceded nor followed by another, so that a
+'$$' opener is left to MathDisplay.  Without that, finditer() matched from
+the *second* '$' of the opener and then again from the second '$' of the
+closer, and that second match -- '$' plus whatever followed the display --
+ran past the real inline maths after it.  The bogus token was dropped as
+overlapping MathDisplay, but the region had been consumed, so the real maths
+never got a token at all and its underscores became emphasis.  Two inline
+spans written with nothing between them ('$x_1$$y_2$') are the cost: the
+first is claimed, the second is left to pass through as text, which LaTeX
+still typesets correctly.
 """
 
     priority = 8
-    pattern = re.compile(r'(?<!\\)\$((?:[^$\n\\]|\\.)+?)(?<!\\)\$')
+    pattern = re.compile(r'(?<![\\$])\$(?!\$)((?:[^$\n\\]|\\.)+?)(?<!\\)\$')
     parse_children = False
 
 

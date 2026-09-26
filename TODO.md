@@ -13,12 +13,6 @@ documentation against the source, and none of it was known before. Two of
 them — the lost backslashes and the unterminated environment — produce wrong
 output with no warning at all.
 
-**A failed conversion leaves an empty output file.** `parse_args` opens the
-output for writing, which truncates it, before anything is read -- so a deck
-that fails to convert replaces the previous `.tex` with nothing. Writing to a
-temporary file and renaming it on success is the fix. (The worst case, `-o`
-naming the input, is refused now.)
-
 **`\(x\)` and `\[y\]` lose their backslashes**, rendering as `(x)` and `[y]`.
 The brackets are ASCII punctuation, so marko's `Literal` claims them, and
 `render_literal` re-emits the backslash only for `LATEX_SPECIALS`. Only the

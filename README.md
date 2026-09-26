@@ -617,12 +617,12 @@ Two more consequences of the same rule:
 
 The ones that have actually cost time:
 
-* **`mdslides --pdf deck.tex` destroys `deck.tex`.** With `--pdf` and no `-o`
-  the output name is the input with its extension replaced, so when the input
-  is already a `.tex` the two coincide, and the output is truncated before the
-  input is read. The same holds for `-o` naming the input. More generally, the
-  output file is truncated at startup, so a conversion that fails leaves an
-  empty file where the old one was.
+* **`mdslides --pdf deck.tex` is refused.** With `--pdf` and no `-o` the
+  output name is the input with its extension replaced, so for a `.tex` input
+  the two coincide — which used to destroy the deck. It is now an error, as is
+  `-o` naming the input. The document is written to a temporary file and
+  renamed into place, so a conversion that fails leaves the previous `.tex`
+  alone.
 * **The metadata block needs its closing fence**, and must start on line 1.
   Otherwise it is not metadata at all, silently.
 * **Most LaTeX errors are not echoed by `--pdf`** — read the log it names, or

@@ -18,9 +18,11 @@ import marko.inline
 import os
 import re
 import shutil
+import stat
 import string
 import subprocess
 import sys
+import tempfile
 import yaml
 
 PROG = 'mdslides'
@@ -333,6 +335,77 @@ characters.  A path that cannot be opened is a usage error, reported through
     except OSError as exc:
         parser.error("cannot open the %s '%s': %s"
                      % (what, path, exc.strerror))
+
+
+###########################################
+def open_output(parser, path, standard=None):
+    """open_output(ArgumentParser, str, file) -> file
+
+Opens the file the document is written to, or returns `standard' for '-'.
+
+For a real path this is a *temporary* file beside it, which finish_output()
+then renames over the target.  Opening the target itself would truncate it
+here, before a byte of the input has been read, so a document that failed to
+convert -- a broken metadata block is enough -- replaced the previous .tex
+with an empty one.  Creating the temporary file in the same directory keeps
+the early check that the path can be written at all, and makes the write
+atomic into the bargain.
+"""
+    if path == '-' and standard is not None:
+        if hasattr(standard, 'reconfigure'):
+            standard.reconfigure(encoding='utf-8')
+        return standard
+
+    try:
+        handle = tempfile.NamedTemporaryFile(
+            mode='w', encoding='utf-8', delete=False,
+            dir=os.path.dirname(os.path.abspath(path)),
+            prefix='.' + os.path.basename(path) + '.', suffix='.tmp')
+    except OSError as exc:
+        parser.error("cannot open the output file '%s': %s"
+                     % (path, exc.strerror))
+
+    # A temporary file is created 0600, which is not what writing a .tex
+    # should leave behind.  Match the file being replaced where there is one,
+    # and otherwise what a plain open() would have made.
+    try:
+        os.chmod(handle.name, stat.S_IMODE(os.stat(path).st_mode))
+    except OSError:
+        umask = os.umask(0)
+        os.umask(umask)
+        os.chmod(handle.name, 0o666 & ~umask)
+
+    return handle
+
+
+###########################################
+def finish_output(args):
+    """finish_output(Namespace) -> None
+
+Closes the output and, when it went to a temporary file, renames it over the
+target.  os.replace() is atomic, so a reader never sees a half-written .tex.
+"""
+    if args.output_path is None:
+        return
+
+    args.output.close()
+    os.replace(args.output.name, args.output_path)
+
+
+###########################################
+def discard_output(args):
+    """discard_output(Namespace) -> None
+
+Throws the temporary file away, leaving whatever was at the target alone.
+"""
+    if args.output_path is None:
+        return
+
+    args.output.close()
+    try:
+        os.remove(args.output.name)
+    except OSError:
+        pass
 
 
 ###########################################
@@ -1582,7 +1655,10 @@ def parse_args(argv=None):
         parser.error("the output file '%s' is the input file" % args.output)
 
     args.file = open_file(parser, args.file, 'r', sys.stdin, 'input file')
-    args.output = open_file(parser, args.output, 'w', sys.stdout, 'output file')
+    # Kept, because the handle is a temporary file whose name is not the
+    # document's; --pdf and finish_output() both need where it is going.
+    args.output_path = None if args.output == '-' else args.output
+    args.output = open_output(parser, args.output, sys.stdout)
 
     if args.template is None:
         args.template = open_file(parser, find_template(), 'r',
@@ -1597,10 +1673,17 @@ def parse_args(argv=None):
 if __name__ == '__main__':
     args = parse_args()
 
-    args.output.write(convert(args.file.read(), args.template.read(), args))
+    try:
+        args.output.write(convert(args.file.read(), args.template.read(),
+                                  args))
+    except BaseException:
+        # Includes the sys.exit() a bad metadata block raises.  Nothing but
+        # the temporary file has been written, so the target is untouched.
+        discard_output(args)
+        raise
+
+    # This is also what flushes it to disk before LaTeX is handed the name.
+    finish_output(args)
 
     if args.pdf:
-        # flush it to disk before handing the file to LaTeX
-        if args.output is not sys.stdout:
-            args.output.close()
-        sys.exit(run_latex(args.output.name, quiet=not args.verbose_latex))
+        sys.exit(run_latex(args.output_path, quiet=not args.verbose_latex))

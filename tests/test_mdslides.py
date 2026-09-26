@@ -8,6 +8,7 @@
 import os
 import re
 import shutil
+import stat
 import string
 import struct
 import subprocess
@@ -2066,8 +2067,9 @@ def test_pdf_derives_the_output_name_from_the_input(mdslides, tmp_path,
     source.write_text('# S\n', encoding='utf-8')
     args = mdslides.parse_args(['--pdf', str(source)])
     args.template.close()
-    args.output.close()
-    assert args.output.name == str(tmp_path / 'talk.tex')
+    mdslides.discard_output(args)
+    # not args.output.name: the handle is the temporary file it is written to
+    assert args.output_path == str(tmp_path / 'talk.tex')
 
 
 def test_pdf_keeps_an_explicit_output_name(mdslides, tmp_path):
@@ -2076,8 +2078,8 @@ def test_pdf_keeps_an_explicit_output_name(mdslides, tmp_path):
     args = mdslides.parse_args(['--pdf', str(source), '-o',
                                 str(tmp_path / 'other.tex')])
     args.template.close()
-    args.output.close()
-    assert args.output.name == str(tmp_path / 'other.tex')
+    mdslides.discard_output(args)
+    assert args.output_path == str(tmp_path / 'other.tex')
 
 
 @pdflatex_needed
@@ -2121,6 +2123,55 @@ def test_pdf_reports_latex_errors_and_fails(script, tmp_path):
     assert done.returncode != 0
     assert 'nosuchpackageexists' in done.stderr
     assert 'bad.log' in done.stderr
+
+
+def test_a_failed_conversion_leaves_the_previous_output_alone(script,
+                                                              tmp_path):
+    """The output used to be opened -- and so truncated -- in parse_args,
+before a byte of the input was read, so a document that failed to convert
+replaced the previous .tex with an empty one."""
+    source = tmp_path / 'deck.md'
+    source.write_text('---\ntitle: [unclosed\n---\n\n# S\n', encoding='utf-8')
+    out = tmp_path / 'deck.tex'
+    out.write_text('PREVIOUS\n', encoding='utf-8')
+    done = run(script, str(source), '-o', str(out))
+    assert done.returncode == 1
+    assert out.read_text(encoding='utf-8') == 'PREVIOUS\n'
+
+
+def test_a_failed_conversion_leaves_no_output_and_no_litter(script, tmp_path):
+    """And when there was no previous file, it does not create one -- nor
+leave the temporary file it wrote to behind."""
+    source = tmp_path / 'deck.md'
+    source.write_text('---\ntitle: [unclosed\n---\n\n# S\n', encoding='utf-8')
+    done = run(script, str(source), '-o', str(tmp_path / 'deck.tex'))
+    assert done.returncode == 1
+    assert not (tmp_path / 'deck.tex').exists()
+    assert sorted(f.name for f in tmp_path.iterdir()) == ['deck.md']
+
+
+def test_the_output_keeps_the_mode_of_the_file_it_replaces(script, tmp_path):
+    """A temporary file is created 0600; replacing a 0644 .tex with one would
+be a quiet regression."""
+    source = tmp_path / 'deck.md'
+    source.write_text('# S\n', encoding='utf-8')
+    out = tmp_path / 'deck.tex'
+    out.write_text('old\n', encoding='utf-8')
+    out.chmod(0o640)
+    done = run(script, str(source), '-o', str(out))
+    assert done.returncode == 0, done.stderr
+    assert stat.S_IMODE(out.stat().st_mode) == 0o640
+
+
+def test_a_new_output_is_readable(script, tmp_path):
+    """And a file that did not exist gets what a plain open() would have
+given it, not 0600."""
+    source = tmp_path / 'deck.md'
+    source.write_text('# S\n', encoding='utf-8')
+    out = tmp_path / 'deck.tex'
+    done = run(script, str(source), '-o', str(out))
+    assert done.returncode == 0, done.stderr
+    assert stat.S_IMODE(out.stat().st_mode) & 0o044
 
 
 def test_pdf_refuses_to_write_over_its_own_input(script, tmp_path):

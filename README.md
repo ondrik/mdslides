@@ -639,10 +639,13 @@ The ones that have actually cost time:
 * **Task lists misfire**: `- [ ] a task` becomes `\item [ ] a task`, where
   LaTeX reads the brackets as `\item`'s optional label.
 * **An ordered list's start number is ignored** — `5.` renumbers to 1.
-* **An unterminated `\begin{env}`** is not an error here. It swallows the rest
-  of the *file*: every heading and slide after it is absorbed as literal text,
-  so a three-frame deck comes out as one frame — and LaTeX still gets an
-  unbalanced environment, which fails much later with a confusing message.
+* **An unterminated `\begin{env}`** reaches as far as the next heading, which
+  is where the frame ends, and is reported on stderr as `'\begin{align}' was
+  never closed`. What it did swallow is still emitted, so LaTeX gets an
+  unbalanced environment and says so — but only that one slide is affected.
+  A verbatim environment (`lstlisting`, `verbatim`, ...) is the exception: a
+  `# ` line inside one is a shell or Python comment, so only the matching
+  `\end` closes it, and an unterminated one does still run on.
 * **A four-space indent makes a code block**, so an indented `@block` or
   `\begin{...}` line is a listing instead of what you meant.
 

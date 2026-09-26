@@ -9,20 +9,14 @@ errors. The ordering within each group is roughly by how much it buys.
 ## Defects
 
 Everything from here to the `short-title` entry was found by auditing the
-documentation against the source, and none of it was known before. Two of
-them — the lost backslashes and the unterminated environment — produce wrong
-output with no warning at all.
+documentation against the source, and none of it was known before. The first
+of them produces wrong output with no warning at all.
 
 **`\(x\)` and `\[y\]` lose their backslashes**, rendering as `(x)` and `[y]`.
 The brackets are ASCII punctuation, so marko's `Literal` claims them, and
 `render_literal` re-emits the backslash only for `LATEX_SPECIALS`. Only the
 `$` spellings work -- which bites hardest because `mdslides` *emits* `\[...\]`,
 so copying its own output back into a source breaks silently.
-
-**An unterminated `\begin{env}` swallows the rest of the file.**
-`RawLatexEnvironment.parse()` loops to the end of the source with no heading
-or frame boundary, unlike a directive, which any heading closes. A three-frame
-deck comes out as one frame with the later headings in it as literal text.
 
 **A `---` break does not close a directive.** It is swallowed into the
 environment and set as `\medskip\hrule\medskip`, the untitled frame it should

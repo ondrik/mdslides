@@ -1373,6 +1373,84 @@ def test_directive_same_name_nests_when_not_a_sibling(render):
     assert body.count('\\end{block}') == 2
 
 
+def test_unterminated_environment_stops_at_the_next_heading(render, capsys):
+    """It used to run to the end of the source, so every later heading became
+literal text inside the environment and a whole deck came out as one frame."""
+    body = render(doc("""
+        # One
+
+        \\begin{align}
+        x &= y
+
+        # Two
+
+        second
+
+        # Three
+
+        third
+    """))
+    assert body.count('\\begin{frame}') == 3
+    assert 'was never closed' in capsys.readouterr().err
+
+
+def test_unterminated_environment_keeps_what_it_had(render, capsys):
+    """What it did consume is still emitted verbatim -- unbalanced, which is
+LaTeX's business to complain about, rather than silently invented."""
+    body = render('# One\n\n\\begin{align}\nx &= y\n\n# Two\n\nsecond\n')
+    assert '\\begin{align}\nx &= y' in body
+    assert '\\end{align}' not in body
+    capsys.readouterr()
+
+
+@pytest.mark.parametrize('line', [
+    pytest.param('# a shell comment', id='hash-space'),
+    pytest.param('#!/bin/sh', id='shebang'),
+    pytest.param('#include <stdio.h>', id='include'),
+])
+def test_verbatim_environment_is_not_closed_by_a_hash_line(render, capsys,
+                                                           line):
+    """A '# ' line inside a hand-written listing is a shell or Python comment,
+not a heading, so only the matching \\end closes one of these."""
+    body = render('# L\n\n\\begin{lstlisting}\n%s\n\\end{lstlisting}\n' % line)
+    assert line in body
+    assert '\\end{lstlisting}' in body
+    assert 'never closed' not in capsys.readouterr().err
+
+
+@pytest.mark.parametrize('line', [
+    pytest.param('#include <stdio.h>', id='include'),
+    pytest.param('#define N 10', id='define'),
+])
+def test_a_hash_without_a_space_is_not_a_heading(render, capsys, line):
+    """So a C preprocessor line does not close even a non-verbatim one."""
+    body = render('# S\n\n\\begin{align}\n%s\n\\end{align}\n' % line)
+    assert line in body
+    assert '\\end{align}' in body
+    assert 'never closed' not in capsys.readouterr().err
+
+
+def test_a_closed_environment_is_untouched_by_the_heading_rule(render, capsys):
+    """The ordinary case, including a nested environment of the same name."""
+    body = render(doc("""
+        # S
+
+        \\begin{center}
+        \\begin{center}
+        inner
+        \\end{center}
+        \\end{center}
+
+        # T
+
+        after
+    """))
+    assert body.count('\\begin{center}') == 2
+    assert body.count('\\end{center}') == 2
+    assert body.count('\\begin{frame}') == 2
+    assert 'never closed' not in capsys.readouterr().err
+
+
 def test_directive_stray_end_is_dropped_with_a_warning(render, capsys):
     body = render('# S\n\ntext\n@end\n')
     assert '@end' not in body

@@ -184,9 +184,13 @@ COMMENT_LINE_RE = re.compile(r'[ \t]*%')
 # A fenced code block, and a verbatim LaTeX environment: the two places where
 # a leading '%' is content rather than a comment.
 CODE_FENCE_RE = re.compile(r'[ \t]{0,3}(`{3,}|~{3,})')
+# Environments whose contents are taken literally.  A '%' line inside one is
+# content, and so is a '# ' line -- a shell or Python comment, not a heading --
+# which is why RawLatexEnvironment does not let a heading close one of these.
+VERBATIM_ENVIRONMENTS = ('lstlisting', 'verbatim', 'Verbatim', 'alltt',
+                         'minted', 'semiverbatim', 'comment')
 VERBATIM_BEGIN_RE = re.compile(
-    r'[ \t]*\\begin\{(lstlisting|verbatim|Verbatim|alltt|minted'
-    r'|semiverbatim|comment)\}')
+    r'[ \t]*\\begin\{(' + '|'.join(VERBATIM_ENVIRONMENTS) + r')\}')
 
 # An image, with an optional title and an optional attribute list:
 #   ![alt](figure.png "title"){ width=0.8 }
@@ -895,9 +899,18 @@ no blank line in between.
         first = source.next_line()
         source.consume()
 
-        environment = re.escape(BEGIN_ENV_RE.match(first).group(1))
+        name = BEGIN_ENV_RE.match(first).group(1)
+        environment = re.escape(name)
         begin = re.compile(r'\\begin\{' + environment + r'\}')
         end = re.compile(r'\\end\{' + environment + r'\}')
+
+        # A heading is a frame boundary and no environment reaches past one.
+        # Without this an unterminated '\begin{...}' swallowed the rest of the
+        # file: every later heading became literal text inside it, and a deck
+        # of twenty frames came out as one.  Verbatim environments are exempt,
+        # since a '# ' line in one is a shell or Python comment.  ('#include'
+        # is safe either way: an ATX heading needs a space after the hashes.)
+        stops_at_heading = name not in VERBATIM_ENVIRONMENTS
 
         # count nesting, so that an inner tabular of the same kind does not
         # end the outer one early
@@ -906,9 +919,15 @@ no blank line in between.
             line = source.next_line()
             if line is None:
                 break                       # unterminated; take what we have
+            if stops_at_heading and HEADING_LINE_RE.match(line):
+                break                       # not ours to eat: leave it parsed
             source.consume()
             lines.append(line)
             depth += len(begin.findall(line)) - len(end.findall(line))
+
+        if depth > 0:
+            print("%s: warning: '\\begin{%s}' was never closed"
+                  % (PROG, name), file=sys.stderr)
 
         return ''.join(lines).rstrip('\n')
 

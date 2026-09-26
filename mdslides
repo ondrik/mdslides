@@ -269,6 +269,32 @@ MACRO_LINE_RE = re.compile(r'[ \t]*(?:' + MACRO + r'[ \t]*)+$', re.MULTILINE)
 # The start of a LaTeX environment, '\begin{tabularx}'.
 BEGIN_ENV_RE = re.compile(r'[ \t]*\\begin\{([A-Za-z@*]+)\}')
 
+# A slide's own metadata block: '---', YAML, and a closing '---' or '...'.
+# Told from a thematic break by that closing fence, exactly as the document's
+# own block is (FRONTMATTER_RE); without one this is an ordinary break and
+# starts an untitled frame, which is what it has always done.
+# The content is a run of *non-blank* lines that are not a fence of their
+# own.  Two thematic breaks with a slide between them have exactly the shape
+# of a block, and that slide is nearly always separated by blank lines, so
+# without this the text between them is eaten -- which is what the first cut
+# of this did.
+SLIDE_METADATA_RE = re.compile(
+    r'(?m)---[ \t]*\n'
+    r'((?:(?!(?:---|\.\.\.|```|~~~)[ \t]*$)[^\n\S]*\S[^\n]*\n)+?)'
+    r'(?:---|\.\.\.)[ \t]*(?:\n|\Z)')
+
+# Keys a slide's metadata block understands.  Anything else is ignored, since
+# a slide has no template to pass it to.
+SLIDE_METADATA_KEYS = ('title', 'label', 'options', 'itemsep',
+                       'part', 'section', 'subsection')
+
+# Metadata values that become prose on a slide, and are therefore parsed as
+# Markdown.  Everything else -- a theme, header-includes, a colour -- reaches
+# the template exactly as YAML read it.
+MARKDOWN_METADATA = ('title', 'subtitle', 'author', 'institute', 'date',
+                     'short-title', 'short-author', 'short-institute',
+                     'short-date', 'toc-title')
+
 # Environments and macros that typeset their contents verbatim, so that a
 # frame containing raw LaTeX still gets [fragile].
 VERBATIM_RE = re.compile(r'\\begin\{(?:lstlisting|verbatim|Verbatim|alltt'
@@ -871,6 +897,207 @@ an underscore or an asterisk would otherwise be taken as markup.
     parse_group = 0             # the pattern has no capturing group
 
 
+class SlideMetadata(marko.block.BlockElement):
+    """A slide's own metadata block, '---' to '---'.
+
+Starts a frame and says what that frame is: its title, its options, its
+label.  The heading form is the shorthand -- '# Why it grows {#growth}' and a
+block giving title and label are the same slide -- and this is what a frame
+with no heading at all had no way to say.
+
+Priority 9 puts it above marko's ThematicBreak, which would otherwise claim
+the '---'.  It only matches when a closing fence follows, so a lone '---' is
+still a break.
+"""
+
+    priority = 9
+
+    #: what match() read, for parse() to use: claiming the block is decided
+    #: by whether the YAML is usable, so it has to be parsed to decide
+    _meta = None
+
+    def __init__(self, meta):
+        self.meta = meta
+        self.children = []
+
+    @classmethod
+    def match(cls, source):
+        # Only at the top level.  Source.expect_re matches the raw buffer, so
+        # inside a quote or a list item the lines still carry the container's
+        # prefix and the match would run straight through its end.
+        if source.state is not source.root:
+            return None
+
+        match = source.expect_re(SLIDE_METADATA_RE)
+        if not match:
+            return None
+
+        # A block is claimed only when it says something this tool
+        # understands.  Anything else -- prose that happens to be
+        # 'Note: this', a YAML comment, an empty gap -- is a pair of thematic
+        # breaks and has to stay one.
+        meta = load_slide_metadata(match.group(1))
+        if not meta:
+            return None
+
+        cls._meta = meta
+        return match
+
+    @classmethod
+    def parse(cls, source):
+        source.expect_re(SLIDE_METADATA_RE)
+        source.consume()
+        meta, cls._meta = cls._meta, None
+        return parse_slide_metadata(meta, source)
+
+
+###########################################
+def load_slide_metadata(text):
+    """load_slide_metadata(str) -> dict or None
+
+Reads the YAML between a slide block's fences, and says whether this is a
+slide block at all.
+
+None means it is not: the text is not a mapping, or names nothing this tool
+understands.  Deciding that here, before the block is claimed, is what lets a
+pair of thematic breaks with a slide between them go on being two breaks --
+a mapping is a poor description of a page of prose, and a page of prose that
+does parse as one still has to name a key we know.
+"""
+    try:
+        meta = yaml.safe_load(text)
+    except yaml.YAMLError:
+        return None
+
+    if not isinstance(meta, dict) or not meta:
+        return None
+    if not any(key in SLIDE_METADATA_KEYS for key in meta):
+        return None
+
+    return meta
+
+
+###########################################
+def parse_slide_metadata(meta, source):
+    """parse_slide_metadata(dict, Source) -> dict
+
+Finishes a slide's metadata once the block has been claimed.  A title is
+parsed as Markdown here rather than at render time, the way a directive's is,
+so that '**bold**' and '$x$' work in it exactly as they do in a heading.
+"""
+    named = ', '.join(sorted(str(key) for key in meta
+                             if key in SLIDE_METADATA_KEYS))
+
+    for key in meta:
+        if key not in SLIDE_METADATA_KEYS:
+            print("%s: warning: a slide has no '%s' setting (in the block "
+                  "setting %s)" % (PROG, key, named), file=sys.stderr)
+
+    for key in ('title', 'part', 'section', 'subsection'):
+        if key in meta:
+            # a title may be a number, a date, anything YAML reads as a scalar
+            meta[key] = markdown_value(scalar(meta[key]), source.parser)
+
+    return meta
+
+
+###########################################
+def length(value):
+    """length(object) -> str or None
+
+A length from a slide's metadata.  A bare number is read as 'em', the way a
+bare number is a fraction of \\textwidth for '@column' -- 'itemsep: 0' is the
+natural way to close a list up, and '\\setlength{\\itemsep}{0}' is an
+'Illegal unit' error rather than a tight list.
+"""
+    if value is None:
+        return None
+    text = scalar(value)
+    return text + 'em' if BARE_NUMBER_RE.match(text) else text
+
+
+###########################################
+def scalar(value):
+    """scalar(object) -> str
+
+A metadata value as a single line of text.  YAML hands back numbers, dates
+and lists as readily as strings, and a newline inside \\begin{frame}{...}
+is not something LaTeX forgives.
+"""
+    if isinstance(value, (list, tuple)):
+        value = ' '.join(str(item) for item in value)
+    return ' '.join(str(value).split())
+
+
+###########################################
+def render_metadata(markdown, meta):
+    """render_metadata(Markdown, dict) -> None
+
+Parses the metadata values that become prose on a slide as Markdown, in
+place, so that a title can be written '**Lecture 7**' rather than
+'\\textbf{Lecture 7}'.  It is the same answer a slide's own 'title:' gives,
+and the two have to agree: a heading moved into a metadata block must not
+quietly lose its emphasis.
+
+LaTeX in those values goes on working, since passthrough is what happens to
+anything Markdown does not claim.  What changes is that an underscore in a
+title is now emphasis, as it already was in a heading.
+"""
+    for key in MARKDOWN_METADATA:
+        value = meta.get(key)
+        if isinstance(value, str):
+            meta[key] = render_metadata_value(markdown, value)
+        elif isinstance(value, (list, tuple)):
+            # 'author:' may be a list, and each of them is prose
+            meta[key] = [render_metadata_value(markdown, item)
+                         if isinstance(item, str) else item for item in value]
+
+
+###########################################
+def render_metadata_value(markdown, text):
+    """render_metadata_value(Markdown, str) -> str
+
+Renders one metadata value.  Only a value that parses as a single paragraph
+is taken: '1. Introduction' is a numbered title, not a list, and rendering
+the document it parses as would make one of it.  Anything block-shaped is
+handed back as the string it was, which is what every value used to be.
+"""
+    if '\\' in text:
+        # A backslash says this value is LaTeX, and LaTeX is what passthrough
+        # hands over untouched.  Parsing it would cost a deck its line breaks:
+        # marko reads the '\\\\' of 'Lecture 7\\\\Symbolic Execution' as one
+        # escaped backslash and renders a single one, which is not a break.
+        return text
+
+    blocks = markdown.parse(text).children
+    if len(blocks) != 1 or blocks[0].get_type() != 'Paragraph':
+        return text
+    if lone_graphic(blocks[0]) is not None:
+        return text                     # a caption belongs on no title page
+
+    # the paragraph alone, not the document: render_document() would wrap it
+    # in a frame
+    return markdown.render(blocks[0]).strip()
+
+
+###########################################
+def markdown_value(text, parser):
+    """markdown_value(str, Parser) -> [Element] or str
+
+Parses a metadata value as Markdown, and hands back the blocks to render.
+
+Only a value that parses as a single paragraph is taken: '1. Introduction' is
+a numbered title, not a list, and parsing it as a document would make one of
+it.  Anything block-shaped is returned as the string it was, which is what
+every metadata value used to be.
+"""
+    blocks = parser.parse(text).children
+    if len(blocks) == 1 and blocks[0].get_type() == 'Paragraph':
+        return blocks
+    return text
+
+
+###########################################
 class RawLatexEnvironment(marko.block.BlockElement):
     """A LaTeX environment, '\\begin{tabularx}' to '\\end{tabularx}'.
 
@@ -1063,7 +1290,7 @@ The elements above, as an extension to register with marko.
 """
     return marko.helpers.MarkoExtension(
         elements=[MathDisplay, Math, Graphic, Span, Highlight, RawLatexInline,
-                  RawLatexEnvironment, RawLatexMacroLine,
+                  RawLatexEnvironment, RawLatexMacroLine, SlideMetadata,
                   Directive, StrayDirectiveEnd])
 
 
@@ -1210,14 +1437,18 @@ happens inside `inline code', where the text is meant to be literal.
     #: emphasis can still tell what came before it
     _previous = ''
 
+    #: 'itemsep:' from the slide being rendered, or None
+    _itemsep = None
+
     ####################
     # document structure
     ####################
 
     def render_document(self, element):
         self._previous = ''             # marko reuses the renderer instance
+        self._itemsep = None
         parts = []
-        for kind, heading, nodes in self.split_slides(element.children):
+        for kind, heading, nodes, meta in self.split_slides(element.children):
             if kind == 'section':
                 title, _, sectioning = split_heading_attributes(
                     self.render_children(heading))
@@ -1225,15 +1456,16 @@ happens inside `inline code', where the text is meant to be literal.
                 # sectioning class on it only says which level
                 parts.append('\\%s{%s}\n' % (sectioning or 'section', title))
             else:
-                parts.append(self.render_frame(heading, nodes))
+                parts.append(self.render_frame(heading, nodes, meta))
         return '\n'.join(parts)
 
     def split_slides(self, children):
-        """split_slides([Element]) -> [(str, Element or None, [Element])]
+        """split_slides([Element]) -> [(str, Element or None, [Element], dict)]
 
 Groups the top level of the document into sections and frames.  A heading
 above the slide level becomes a \\section, one at the slide level starts a
-frame, and a thematic break starts a frame with no title.
+frame, a slide metadata block starts a frame and says what it is, and a
+thematic break starts a frame with no title.
 """
         slides = []
         frame = None
@@ -1241,37 +1473,62 @@ frame, and a thematic break starts a frame with no title.
         for child in children:
             level = heading_level(child)
             if level is not None and level < self.slide_level:
-                slides.append(('section', child, []))
+                slides.append(('section', child, [], {}))
                 frame = None
             elif level == self.slide_level:
                 frame = []
-                slides.append(('frame', child, frame))
+                slides.append(('frame', child, frame, {}))
+            elif child.get_type() == 'SlideMetadata':
+                frame = []
+                slides.append(('frame', None, frame, child.meta))
             elif child.get_type() == 'ThematicBreak':
                 frame = []
-                slides.append(('frame', None, frame))
+                slides.append(('frame', None, frame, {}))
             elif frame is None:
                 # material before the first heading: skip the blank lines
                 # left behind by the metadata block, keep anything else
                 if child.get_type() == 'BlankLine':
                     continue
                 frame = [child]
-                slides.append(('frame', None, frame))
+                slides.append(('frame', None, frame, {}))
             else:
                 frame.append(child)
 
         return slides
 
-    def render_frame(self, heading, nodes):
-        """render_frame(Element or None, [Element]) -> str"""
+    def render_frame(self, heading, nodes, meta=None):
+        """render_frame(Element or None, [Element], dict) -> str"""
+        meta = meta or {}
         options = []
         title = ''
+        separator_title = None
         sectioning = None
         if heading is not None:
             title, options, sectioning = split_heading_attributes(
                 self.render_children(heading))
 
+        # The block form of the same three things.  A heading and a block
+        # never describe one frame -- a heading starts a frame of its own --
+        # so these cannot disagree with what was read above.
+        if 'title' in meta:
+            title = self.metadata_value(meta['title'])
+        for level in ('part', 'section', 'subsection'):
+            if level in meta:
+                if sectioning:
+                    print('%s: warning: a slide opens both a %s and a %s'
+                          % (PROG, sectioning, level), file=sys.stderr)
+                sectioning = level
+                # the level names the divider; 'title:' beside it names the
+                # slide that follows, and neither is the other's business
+                separator_title = self.metadata_value(meta[level])
+        if 'options' in meta:
+            options = [scalar(option) for option in as_list(meta['options'])]
+        if 'label' in meta:
+            options.append('label=%s' % scalar(meta['label']))
+
         separator = ''
         if sectioning:
+            title, separator_title = (separator_title or title), None
             # Only open the sectioning level; the separator slide itself is
             # hooked onto it in the preamble, by $sectionpages, so that
             # 'section-titles: false' can switch every one of them off and a
@@ -1289,8 +1546,23 @@ frame, and a thematic break starts a frame with no title.
         if title:
             head += '{%s}' % title
 
+        # Set on the renderer rather than threaded through every block, so
+        # that a list nested in a directive or a column is reached too.  Put
+        # back afterwards: it is this frame's business and no other's.
+        previous, self._itemsep = self._itemsep, length(meta.get('itemsep'))
         body = ''.join(self.render(node) for node in nodes)
+        self._itemsep = previous
+
         return '%s%s\n%s\\end{frame}\n' % (separator, head, body)
+
+    def metadata_value(self, value):
+        """metadata_value([Element] or str) -> str
+
+A slide's title, as Markdown where it parsed as Markdown.
+"""
+        if isinstance(value, str):
+            return value
+        return ''.join(self.render(block) for block in value).strip()
 
     ####################
     # blocks
@@ -1323,6 +1595,10 @@ frame, and a thematic break starts a frame with no title.
         # A list whose items are single paragraphs is set tight, the way
         # pandoc does it; otherwise beamer leaves a gap between every item.
         tight = '\\tightlist\n' if getattr(element, 'tight', False) else ''
+        # 'itemsep:' on the slide.  After \tightlist, which zeroes it, and
+        # inside the environment, since itemize resets \itemsep on entry.
+        if self._itemsep is not None:
+            tight += '\\setlength{\\itemsep}{%s}\n' % self._itemsep
         return '\\begin{%s}\n%s%s\\end{%s}\n' % (
             environment, tight, self.render_children(element), environment)
 
@@ -1405,6 +1681,10 @@ frame, and a thematic break starts a frame with no title.
     def render_stray_directive_end(self, element):
         print("%s: warning: '%s' with nothing open" % (PROG, element.text),
               file=sys.stderr)
+        return ''
+
+    def render_slide_metadata(self, element):
+        # consumed by split_slides(), which is where a slide is decided
         return ''
 
     def render_raw_latex_environment(self, element):
@@ -1587,6 +1867,10 @@ Converts the Markdown source `text' into a complete Beamer document.
             print(child, file=sys.stderr)
     slides = markdown.render(ast)
 
+    # After the body, so that the renderer's quote state belongs to the deck
+    # and not to whatever the title happened to end with.
+    render_metadata(markdown, meta)
+
     variables = build_variables(meta, slides)
 
     # -V can also set a template variable that is not metadata at all.  The
@@ -1594,7 +1878,10 @@ Converts the Markdown source `text' into a complete Beamer document.
     # through the metadata above, and letting the raw string through as well
     # would put the word 'false' on a slide where the block should be empty.
     for key, value in opts.variable.items():
-        if key not in FLAG_VARIABLES:
+        if key not in FLAG_VARIABLES and key not in MARKDOWN_METADATA:
+            # not the prose keys either: those reached the metadata above and
+            # were rendered there, and putting the raw string back would make
+            # '\title[rendered]{raw}' disagree with itself
             variables[key] = value
 
     return string.Template(template).safe_substitute(variables)

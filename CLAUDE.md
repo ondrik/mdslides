@@ -65,6 +65,8 @@ near the top of `mdslides`:
 | `LISTINGS_LANGUAGES` | fence word to `listings` language |
 | `LATEX_ESCAPES`, `URL_ESCAPES` | the two escape tables |
 | `TEMPLATE_DEFAULTS`, `FLAG_VARIABLES` | what every template variable falls back to |
+| `SLIDE_METADATA_KEYS` | what a slide's own `---` block understands |
+| `MARKDOWN_METADATA` | which metadata values are parsed as Markdown |
 
 The sugar tables buy convenience only — an unregistered environment still
 works, you just write the brackets yourself. They carry the one detail worth
@@ -77,6 +79,24 @@ not usage, and the rest of this file assumes them:
 holds Markdown; `\begin{align} ... \end{align}` holds LaTeX and is emitted
 untouched. That is why both work without the tool knowing either name, and why
 no name-to-environment table is needed.
+
+**A slide is declared, not only headed.** A heading is sugar for a metadata
+block's `title:`, the way `@column 0.3` is sugar for `@column{0.3\textwidth}`.
+`SlideMetadata` is an ordinary block element at priority 9, above
+`ThematicBreak`.
+
+What it claims is drawn narrowly, and the reason is worth not rediscovering:
+**two thematic breaks with a slide between them have exactly the shape of a
+block.** The first cut of this claimed any `---`, YAML, `---`, and so ate the
+slide between every pair of breaks in the deck — silently, since a heading
+between them is a YAML comment. So `match()` refuses anything but the top
+level (`Source.expect_re` matches the raw buffer, and inside a container the
+lines still carry its prefix), the content may hold no blank line and no code
+fence, and `load_slide_metadata()` parses the YAML *before* the block is
+claimed, taking it only when it is a mapping naming a key in
+`SLIDE_METADATA_KEYS`. A setext heading still wins over all of it, because
+marko resolves that while parsing the paragraph above, before any element of
+ours is asked.
 
 **Directive arguments are read from the first character.** `<`, `[` or `{`
 means the rest is LaTeX and is handed over exactly as written; anything else
@@ -176,8 +196,9 @@ are three kinds of check worth keeping:
 - **Invariants over `EXAMPLE`** rather than fixed strings: every maths span and
   the `tabularx` table appear verbatim in the output, every frame holding a
   listing is marked fragile, and the frame count matches the number of `#`
-  headings less the ones that only open a section. Add to `EXAMPLE` when
-  adding a construct, and these come along.
+  headings, less the ones that only open a section, plus the slides declared
+  by a metadata block of their own. Add to `EXAMPLE` when adding a construct,
+  and these come along.
 - **Reading the built PDF.** `pdftotext -layout` found three faults on the code
   slides that the tests were blind to; rendering a page with `pdftoppm` and
   looking at it found a column misalignment and a footline that had gone blue

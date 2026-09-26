@@ -1451,6 +1451,269 @@ def test_a_closed_environment_is_untouched_by_the_heading_rule(render, capsys):
     assert 'never closed' not in capsys.readouterr().err
 
 
+###########################################
+# a slide's own metadata block
+###########################################
+
+def test_slide_metadata_starts_a_frame_with_a_title(render):
+    body = render(doc("""
+        ---
+        title: Why it grows
+        ---
+
+        alpha
+    """))
+    assert '\\begin{frame}{Why it grows}' in body
+    assert body.count('\\begin{frame}') == 1
+
+
+def test_slide_metadata_title_is_markdown(render):
+    """The same answer a heading gives, which is the point of the key."""
+    body = render('---\ntitle: Why it **grows** by $x_1$\n---\n\nalpha\n')
+    assert '{Why it \\textbf{grows} by $x_1$}' in body
+
+
+def test_slide_metadata_label_and_options(render):
+    body = render('---\ntitle: T\nlabel: growth\noptions: [t, plain]\n---\n\na\n')
+    assert '\\begin{frame}[t,plain,label=growth]{T}' in body
+
+
+def test_slide_metadata_options_may_be_one_string(render):
+    body = render('---\noptions: plain\n---\n\na\n')
+    assert '\\begin{frame}[plain]' in body
+
+
+@pytest.mark.parametrize('level', ['part', 'section', 'subsection'])
+def test_slide_metadata_opens_a_sectioning_level(render, level):
+    body = render('---\n%s: Part II\n---\n\n' % level)
+    assert '\\%s{Part II}' % level in body
+    assert '\\begin{frame}' not in body
+
+
+def test_slide_metadata_closed_by_three_dots(render):
+    body = render('---\ntitle: T\n...\n\nalpha\n')
+    assert '\\begin{frame}{T}' in body
+
+
+def test_a_break_without_a_closing_fence_is_still_a_break(render):
+    """Which is the rule the document's own metadata block already follows."""
+    body = render('# One\n\n---\n\nloose text\n')
+    assert body.count('\\begin{frame}') == 2
+    assert 'loose text' in body
+
+
+def test_a_break_followed_by_unclosed_yaml_is_still_a_break(render):
+    body = render('# One\n\n---\ntitle: never closed\n\nmore\n')
+    assert 'title: never closed' in body
+    assert '{never closed}' not in body
+
+
+def test_slide_metadata_under_a_paragraph_is_a_setext_heading(render):
+    """A '---' directly below a paragraph is CommonMark's setext underline and
+is claimed before any of this; a blank line above the block avoids it."""
+    body = render('Some title\n---\nkey: value\n---\n\nbody\n')
+    assert '\\textbf{Some title}' in body
+    assert '\\begin{frame}{value}' not in body
+
+
+def test_slide_metadata_warns_about_a_key_it_does_not_know(render, capsys):
+    """Only when the block is a block: it has to name something we know."""
+    body = render('---\ntitle: T\nnosuchkey: 1\n---\n\nalpha\n')
+    assert '\\begin{frame}{T}' in body
+    err = capsys.readouterr().err
+    assert 'nosuchkey' in err
+    assert 'title' in err, 'the warning should say which block it is'
+
+
+@pytest.mark.parametrize('block', [
+    pytest.param('nosuchkey: 1', id='no-key-we-know'),
+    pytest.param('- a\n- b', id='not-a-mapping'),
+    pytest.param('title: [unclosed', id='bad-yaml'),
+    pytest.param('# just a yaml comment', id='comment-only'),
+])
+def test_what_is_not_a_slide_block_stays_two_breaks(render, block):
+    """A block is claimed only when the YAML is usable and names a setting we
+know.  Anything else is a pair of thematic breaks with text between them,
+which is what it was before this existed -- and eating that text is the one
+mistake this feature must never make.
+
+The frame count differs between these cases, because a '---' below a line of
+text is CommonMark's setext underline; what matters is that nothing is lost
+and that no frame is configured."""
+    body = render('# One\n\n---\n%s\n---\n\nalpha\n' % block)
+    assert 'alpha' in body
+    assert '\\begin{frame}[' not in body, 'not settings, just text'
+    if not block.startswith('#'):
+        assert block.splitlines()[0] in body or 'a' in body
+
+
+def test_two_breaks_keep_the_slide_between_them(render):
+    """The shape of two thematic breaks is the shape of a block, and the
+first cut of this ate the slide between them."""
+    body = render(doc("""
+        # One
+
+        ---
+
+        body two
+
+        ---
+
+        body three
+    """))
+    assert body.count('\\begin{frame}') == 3
+    assert 'body two' in body
+    assert 'body three' in body
+
+
+def test_a_heading_between_two_breaks_survives(render):
+    """'# B' is a YAML comment, so the eaten version was silent."""
+    body = render('# A\n\n---\n\n# B\n\n---\n\n# C\n')
+    assert body.count('\\begin{frame}') == 5
+    for title in ('{A}', '{B}', '{C}'):
+        assert title in body
+
+
+def test_prose_between_breaks_is_not_promoted_to_settings(render):
+    """Even when it parses as a mapping: it has to name a key we know."""
+    body = render(doc("""
+        # One
+
+        ---
+        Note: this is prose
+        Also: so is this
+        ---
+
+        alpha
+    """))
+    assert 'Note: this is prose' in body
+    assert '\\begin{frame}[' not in body
+
+
+def test_a_break_inside_a_container_is_not_a_slide_block(render):
+    """Source.expect_re matches the raw buffer, so without the top-level
+guard the match ran straight through the end of a quote or a list item."""
+    body = render(doc("""
+        # One
+
+        > quoted
+        >
+        > ---
+        > title: not a slide
+        > ---
+        >
+        > more quoted
+
+        # Two
+
+        after
+    """))
+    assert body.count('\\begin{frame}') == 2
+    assert 'after' in body
+    assert '\\begin{quote}' in body
+
+
+def test_a_fenced_block_between_breaks_is_not_torn_apart(render):
+    body = render(doc("""
+        # One
+
+        ---
+
+        ```yaml
+        ---
+        title: My deck
+        ---
+        ```
+
+        # Two
+
+        after
+    """))
+    assert body.count('\\begin{frame}') == 3
+    assert 'after' in body
+    assert 'title: My deck' in body
+
+
+def test_slide_metadata_itemsep_reaches_the_lists(render):
+    body = render('---\nitemsep: 1.2em\n---\n\n* a\n* b\n')
+    assert '\\tightlist\n\\setlength{\\itemsep}{1.2em}' in body
+
+
+def test_slide_metadata_itemsep_reaches_a_nested_list(render):
+    """Set on the renderer, so a list inside a directive is reached too."""
+    body = render('---\nitemsep: 2em\n---\n\n@block T\n1. a\n2. b\n@end\n')
+    assert '\\begin{enumerate}' in body
+    assert '\\setlength{\\itemsep}{2em}' in body
+
+
+def test_slide_metadata_itemsep_does_not_leak_to_the_next_slide(render):
+    body = render(doc("""
+        ---
+        itemsep: 2em
+        ---
+
+        * a
+
+        # Next
+
+        * b
+    """))
+    assert body.count('\\setlength{\\itemsep}') == 1
+
+
+###########################################
+# metadata values as Markdown
+###########################################
+
+@pytest.mark.parametrize('value, expected', [
+    pytest.param('**Lecture 7**', '\\textbf{Lecture 7}', id='strong'),
+    pytest.param('*Lecture* 7', '\\emph{Lecture} 7', id='emphasis'),
+    pytest.param('Symbolic $x_1$', 'Symbolic $x_1$', id='maths'),
+    pytest.param('\\textbf{raw}', '\\textbf{raw}', id='raw-latex'),
+    pytest.param('==hot==', '\\hlbl{hot}', id='highlight'),
+    # CommonMark forbids intraword '_' emphasis, so a name survives whole;
+    # only a delimited one is emphasis, as it already was in a heading
+    pytest.param('a_b_c', 'a_b_c', id='underscore-intraword'),
+    pytest.param('a _b_ c', 'a \\emph{b} c', id='underscore-delimited'),
+])
+def test_metadata_title_is_markdown(mdslides, opts, value, expected):
+    # single-quoted: YAML reads a '\\t' in a double-quoted scalar as a tab
+    out = mdslides.convert("---\ntitle: '%s'\n---\n\n# S\n" % value,
+                           '$title', opts())
+    assert out == expected
+
+
+def test_metadata_block_shaped_values_pass_through(mdslides, opts):
+    """'1. Introduction' is a numbered title, not a list."""
+    out = mdslides.convert("---\ntitle: '1. Introduction'\n---\n\n# S\n",
+                           '$title', opts())
+    assert out == '1. Introduction'
+
+
+def test_metadata_author_list_items_are_markdown(mdslides, opts):
+    out = mdslides.convert('---\nauthor: ["A *One*", "B"]\n---\n\n# S\n',
+                           '$author', opts())
+    assert out == 'A \\emph{One} \\and B'
+
+
+def test_metadata_short_form_inherits_the_rendered_long_one(mdslides, opts):
+    out = mdslides.convert("---\ntitle: '**T**'\n---\n\n# S\n",
+                           '$shorttitle', opts())
+    assert out == '\\textbf{T}'
+
+
+@pytest.mark.parametrize('key, variable', [
+    pytest.param('header-includes', '$headerincludes', id='header-includes'),
+    pytest.param('theme', '$theme', id='theme'),
+])
+def test_metadata_that_is_not_prose_is_left_alone(mdslides, opts, key,
+                                                  variable):
+    """Only the values that become prose on a slide are parsed."""
+    out = mdslides.convert("---\n%s: 'a _b_ c'\n---\n\n# S\n" % key,
+                           variable, opts())
+    assert out == 'a _b_ c'
+
+
 def test_directive_stray_end_is_dropped_with_a_warning(render, capsys):
     body = render('# S\n\ntext\n@end\n')
     assert '@end' not in body
@@ -1490,12 +1753,16 @@ def test_render_deck_produces_frames(mdslides, deck, render):
     _, body = mdslides.split_frontmatter(deck)
     result = render(body)
     # One frame per '#' heading, except that a heading opening a section
-    # produces a separator slide instead of a frame of its own.
+    # produces a separator slide instead of a frame of its own -- plus one
+    # per slide declared by a metadata block, which has no heading at all.
     headings = [line for line in body.splitlines() if re.match(r'# \S', line)]
     separators = [line for line in headings
                   if mdslides.split_heading_attributes(line)[2]]
+    blocks = len(mdslides.SLIDE_METADATA_RE.findall(body))
     assert separators, 'expected the example to have a section separator'
-    assert result.count('\\begin{frame}') == len(headings) - len(separators)
+    assert blocks, 'expected the example to have a slide metadata block'
+    assert (result.count('\\begin{frame}')
+            == len(headings) - len(separators) + blocks)
     assert result.count('\\section{') == len(separators)
     assert result.count('\\begin{frame}') == result.count('\\end{frame}')
 

@@ -217,12 +217,22 @@ toc:      true
 
 A few things worth knowing about that table:
 
-* **Metadata values are not parsed as Markdown.** `title: '**Lecture 7**'`
-  puts literal asterisks on the title slide. LaTeX in them *does* work, which
-  is the way to get emphasis, maths, or a line break there:
-  `title: 'Lecture 7\\Symbolic Execution'` (single-quote it, or YAML eats the
-  backslashes). They are not escaped either, so a literal `%` in a title
-  comments out the rest of its line — write `\%`.
+* **The values that become prose are parsed as Markdown** — `title`,
+  `subtitle`, `author`, `institute`, `date`, the four short forms and
+  `toc-title`. So `title: '**Lecture 7**'` is bold and `subtitle: 'SAV $x_1$'`
+  keeps its maths, the same as in a heading. Everything else — a theme, a
+  colour, `header-includes` — reaches the template exactly as YAML read it.
+  LaTeX goes on working in all of them, since passthrough is what happens to
+  anything Markdown does not claim: `title: 'Lecture 7\\Symbolic Execution'`
+  still breaks the line (single-quote it, or YAML eats the backslashes). A
+  value that is *block*-shaped is left alone rather than mangled, so
+  `title: '1. Introduction'` is a numbered title and not a list, and so is a
+  value containing a **backslash**, which is taken to be LaTeX: that is what
+  keeps `title: 'Lecture 7\\[2ex]Symbolic Execution'` a line break rather
+  than a lost backslash. Use LaTeX for emphasis in such a value. They are not
+  escaped either, so a literal `%` in a title comments out the rest of its
+  line — write `\%`. An underscore inside a word is safe, since CommonMark
+  has no intraword `_` emphasis; ` _spaced_ ` is emphasis, as in a heading.
 * **Absent and empty are different** for the short forms. `short-institute:`
   with no value is "not given" and falls back to the long form;
   `short-institute: ''` is "leave it empty", which is the only way to get
@@ -274,6 +284,70 @@ heading, not a break — and a setext `---` is level 2, so at the default slide
 level it is a heading *below* it: no break, no title, just the paragraph set
 as `\textbf{...}\par` inside the frame you were already on. (`===` under a
 paragraph is level 1, and that one does start a frame.)
+
+### A slide's own metadata
+
+A heading is the short way to start a slide. The long way is a metadata block
+of its own — the same shape as the document's, and told from a thematic break
+the same way, by its closing fence:
+
+```markdown
+---
+title: Why the path condition only ever grows
+label: growth
+itemsep: 1.2em
+options: [t]
+---
+
+* every branch **conjoins** a constraint
+* nothing ever removes one
+```
+
+These two are the same slide:
+
+```markdown
+# Why it grows {#growth}     ==     ---
+                                    title: Why it grows
+                                    label: growth
+                                    ---
+```
+
+so most slides should go on being written as a heading and some bullets. The
+block is for when the sugar runs out: several settings at once, a title too
+long to want braces trailing off the end of it, or — the case a heading cannot
+reach at all — **a slide with no title that still needs configuring**.
+
+| Key | What it does |
+|---|---|
+| `title` | the frame title, parsed as Markdown |
+| `label` | becomes `label=`, which `[text](#label)` links to |
+| `options` | frame options, a list or one string |
+| `itemsep` | the space between items of every list on the slide |
+| `part`, `section`, `subsection` | open that sectioning level, as `{.section}` does |
+
+**A block is only a block when it says something.** Two thematic breaks with
+a slide between them have exactly this shape, so the rule is deliberately
+narrow: the lines between the fences must be unbroken by a blank line, must
+parse as a YAML mapping, and must name at least one key from the table above.
+Anything else — prose, a heading, a `#` comment, an empty gap — is what it has
+always been, a pair of breaks with text between them. It is also matched only
+at the top level, so a `---` inside a list, a quote or a directive is
+untouched.
+
+Four more things to know.
+
+* **The first slide cannot use it**, because a block at the very start of a
+  file is the *document's* metadata. Put the document's own block first — an
+  empty `---` / `---` will do — or start with a heading.
+* **A block directly below a paragraph** is CommonMark's setext underline and
+  is claimed before any of this. Leave a blank line above it.
+* **`itemsep` takes a length**, and a bare number means `em`, so `itemsep: 0`
+  closes a list up rather than reaching LaTeX as an illegal unit. It reaches
+  every list on the slide, including one nested in a directive or a column,
+  and does not leak into the next slide.
+* **A key it does not know is reported** on stderr and ignored — but only when
+  the block is a block. A block whose *only* key is a typo names nothing we
+  know, so it stays a pair of breaks, silently.
 
 ### Frame attributes
 
@@ -675,7 +749,8 @@ Most of a pandoc beamer deck converts unchanged. What does not:
 * `slide-level` is a command-line option here, not a metadata key.
 * There is no `-s/--standalone` and no `-t/--to`: the output is always a
   complete Beamer document.
-* Metadata values are not parsed as Markdown.
+* Metadata values *are* parsed as Markdown here, for the keys that become
+  prose. Pandoc parses more of them, and parses them everywhere.
 
 
 ## Custom templates

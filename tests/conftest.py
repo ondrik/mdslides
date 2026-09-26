@@ -21,7 +21,8 @@ TEMPLATE = os.path.join(ROOT, 'beamer.tex.tpl')
 # knows: metadata (including a commented-out line, which is legal Markdown
 # but not legal YAML), frames, a frame attribute, nested lists, a pause,
 # maths whose underscores emphasis must not touch, both kinds of code fence,
-# columns and other directives, a verbatim environment, and a figure.
+# columns and other directives, a verbatim environment, a figure, and a
+# slide declared by a metadata block of its own.
 #
 # Several tests assert invariants over this document rather than fixed
 # strings, so it stands in for a real deck.  It is self-contained: nothing
@@ -118,6 +119,16 @@ Nothing broken yet.
 
 # A figure
 ![A **captioned** figure](f.png){width=0.4}
+
+---
+title: A slide that says what it is
+label: block-form
+itemsep: 1.2em
+options: [t]
+---
+
+* the block form of a heading, which an untitled frame had no way to use
+* `itemsep` reaches this list
 
 # Used materials from
 * Jan Strejček, Masaryk University

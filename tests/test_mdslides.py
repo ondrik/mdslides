@@ -2093,6 +2093,61 @@ def test_pdf_reports_latex_errors_and_fails(script, tmp_path):
     assert 'bad.log' in done.stderr
 
 
+def test_pdf_refuses_to_write_over_its_own_input(script, tmp_path):
+    """'mdslides --pdf deck.tex' used to destroy deck.tex: the output name is
+the input with its extension replaced, and opening the output truncates it
+before a byte of the input is read."""
+    source = tmp_path / 'deck.tex'
+    source.write_text('PRECIOUS\n', encoding='utf-8')
+    done = run(script, '--pdf', str(source))
+    assert done.returncode == 2
+    assert 'is the input file' in done.stderr
+    assert source.read_text(encoding='utf-8') == 'PRECIOUS\n'
+
+
+def test_output_refuses_to_write_over_its_own_input(script, tmp_path):
+    """The same guard without --pdf, where -o names the input."""
+    source = tmp_path / 'deck.md'
+    source.write_text('# S\n', encoding='utf-8')
+    done = run(script, str(source), '-o', str(source))
+    assert done.returncode == 2
+    assert 'is the input file' in done.stderr
+    assert source.read_text(encoding='utf-8') == '# S\n'
+
+
+def test_output_may_be_a_different_file(script, tmp_path):
+    """The guard must not fire on ordinary use."""
+    source = tmp_path / 'deck.md'
+    source.write_text('# S\n', encoding='utf-8')
+    done = run(script, str(source), '-o', str(tmp_path / 'deck.tex'))
+    assert done.returncode == 0, done.stderr
+    assert (tmp_path / 'deck.tex').exists()
+
+
+def test_file_line_errors_are_reported(mdslides, tmp_path, capsys):
+    """run_latex() passes -file-line-error, so an error with a line to blame
+is rewritten as './deck.tex:150: ...' and does not start with '!'.  Matching
+only '!' is how an undefined macro used to produce no message at all."""
+    log = tmp_path / 'deck.log'
+    log.write_text(doc("""
+        This is pdfTeX, Version 3.141592653
+        (./deck.tex
+        LaTeX2e <2024-11-01>
+        ./deck.tex:150: Undefined control sequence.
+        l.150 \\nosuchmacro
+        ! LaTeX Error: File `nope.sty' not found.
+        (/usr/share/texlive/texmf-dist/tex/latex/base/size11.clo)
+        Package hyperref Info: Option `colorlinks' set `true' on input line 12.
+    """), encoding='utf-8')
+    mdslides.report_latex_errors(str(log))
+    err = capsys.readouterr().err
+    assert './deck.tex:150: Undefined control sequence.' in err
+    assert "! LaTeX Error: File `nope.sty' not found." in err
+    # ordinary chatter must not be mistaken for an error
+    assert 'size11.clo' not in err
+    assert 'hyperref Info' not in err
+
+
 @pytest.mark.parametrize('argv, code', [
     pytest.param(['-V', 'oops'], 2, id='malformed-variable'),
     pytest.param(['/no/such/deck.md'], 2, id='missing-input'),

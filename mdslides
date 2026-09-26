@@ -133,6 +133,11 @@ HEADING_ATTRS_RE = re.compile(
 RAW_LISTING_LANGUAGES = ('lstlisting', 'listings')
 LISTINGS_ESCAPECHAR = '@'
 
+# An error as -file-line-error writes it: './deck.tex:150: Missing $ inserted.'
+# The path is anything up to the last colon-digits-colon, since it may itself
+# contain a colon.
+FILE_LINE_ERROR_RE = re.compile(r'^.+:\d+: .')
+
 # Fence languages that the listings package knows.  It errors out on a
 # language it cannot load, so anything missing here becomes a plain listing.
 # A '[dialect]language' value has to reach LaTeX inside braces, and some
@@ -292,6 +297,22 @@ if set, otherwise the one shipped next to this script.
 
 
 ###########################################
+def same_file(one, other):
+    """same_file(str, str) -> bool
+
+Whether two paths lead to the same file.  os.path.samefile() needs both to
+exist, which the output usually does not, so the names are normalized instead
+and samefile() is only consulted when it can answer -- which is what catches a
+symlink or a second mount.
+"""
+    try:
+        return os.path.samefile(one, other)
+    except OSError:
+        return (os.path.normcase(os.path.abspath(one))
+                == os.path.normcase(os.path.abspath(other)))
+
+
+###########################################
 def open_file(parser, path, mode, standard=None, what='file'):
     """open_file(ArgumentParser, str, str, file, str) -> file
 
@@ -358,6 +379,12 @@ def report_latex_errors(log_path):
     """report_latex_errors(str) -> None
 
 Prints the lines LaTeX marked as errors, and where to read the rest.
+
+Two spellings, because run_latex() asks for -file-line-error: TeX rewrites an
+error that has a line to blame as './deck.tex:150: Undefined control
+sequence.' and leaves the rest -- a missing package, say -- beginning with
+'!'.  Matching only the second is how an undefined macro used to produce no
+message at all.
 """
     try:
         with open(log_path, encoding='utf-8', errors='replace') as handle:
@@ -366,7 +393,7 @@ Prints the lines LaTeX marked as errors, and where to read the rest.
         return
 
     for line in lines:
-        if line.startswith('!'):
+        if line.startswith('!') or FILE_LINE_ERROR_RE.match(line):
             print('  %s' % line, file=sys.stderr)
 
     print('%s: see %s' % (PROG, log_path), file=sys.stderr)
@@ -1534,6 +1561,14 @@ def parse_args(argv=None):
         if args.file == '-':
             parser.error('--pdf needs -o FILE, or a named input file')
         args.output = os.path.splitext(args.file)[0] + '.tex'
+
+    # Opening the output truncates it, and that happens before a byte of the
+    # input is read -- so if the two are the same file the deck is destroyed
+    # and the frames come out empty.  'mdslides --pdf deck.tex' is the way in:
+    # splitext() hands back the name it was given.
+    if args.file != '-' and args.output != '-' and same_file(args.file,
+                                                             args.output):
+        parser.error("the output file '%s' is the input file" % args.output)
 
     args.file = open_file(parser, args.file, 'r', sys.stdin, 'input file')
     args.output = open_file(parser, args.output, 'w', sys.stdout, 'output file')

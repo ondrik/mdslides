@@ -10,25 +10,7 @@ errors. The ordering within each group is roughly by how much it buys.
 
 Everything from here to the `short-title` entry was found by auditing the
 documentation against the source, and none of it was known before. The first
-two lose or hide your work; the next three produce wrong output with no
-warning at all.
-
-**`mdslides --pdf deck.tex` destroys `deck.tex`.** With `--pdf` and no `-o`
-the output name is the input with its extension replaced, so when the input is
-already a `.tex` the two coincide -- and `parse_args` opens the input and then
-truncates the output before anything is read, so the source is gone and the
-body comes out empty. `-o` naming the input does the same. More generally the
-output file is truncated at startup, so any conversion that fails leaves an
-empty file where the old one was. Refusing when the two paths resolve to the
-same file is a few lines.
-
-**`--pdf` hides most LaTeX errors.** `run_latex` passes `-file-line-error`, so
-the engine writes `./deck.tex:150: Undefined control sequence.`, but
-`report_latex_errors` prints only lines beginning with `!`. A typo'd macro
-therefore yields nothing but `mdslides: see /path/deck.log`. Missing-package
-errors are the exception, because TeX does not rewrite those -- which is why
-the existing test passes. Matching the `file:line:` form too is two lines, and
-it is what makes every other defect here diagnosable.
+two produce wrong output with no warning at all.
 
 **`$$...$$` corrupts the next `$...$` in the same paragraph.** `A $$y$$ then
 $a _b_ c$` renders as `\[y\] then $a \emph{b} c$`. `Math.pattern` cannot match
@@ -37,6 +19,12 @@ bogus token that intersects the `MathDisplay` one; `_resolve_overlap` drops
 the bogus token, but the region is already consumed and the real inline maths
 never gets one. Invisible when the inline maths holds no Markdown-active
 character. Putting the display in a paragraph of its own avoids it.
+
+**A failed conversion leaves an empty output file.** `parse_args` opens the
+output for writing, which truncates it, before anything is read -- so a deck
+that fails to convert replaces the previous `.tex` with nothing. Writing to a
+temporary file and renaming it on success is the fix. (The worst case, `-o`
+naming the input, is refused now.)
 
 **`\(x\)` and `\[y\]` lose their backslashes**, rendering as `(x)` and `[y]`.
 The brackets are ASCII punctuation, so marko's `Literal` claims them, and

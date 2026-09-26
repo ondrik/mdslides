@@ -5,8 +5,12 @@ Converts Markdown into LaTeX Beamer slides. A lightweight alternative to
 
 The guiding principle is **LaTeX passthrough**: whatever the Markdown parser
 does not recognize is assumed to be LaTeX and emitted untouched, so any slide
-can fall back to raw LaTeX. Escaping happens only inside `` `inline code` ``,
-where the text is meant to be literal.
+can fall back to raw LaTeX. Escaping happens in two places only: inside
+`` `inline code` ``, where the text is meant to be literal, and in a link
+destination, where LaTeX would read a `#` as a parameter and a `%` as a
+comment. A code span is not inviolable even so — maths and raw LaTeX are
+claimed ahead of it, so `` `$x$` `` and `` `\ldots` `` keep their backticks
+and escape nothing.
 
     mdslides deck.md -o deck.tex     # convert
     mdslides --pdf deck.md           # convert and build the PDF
@@ -22,19 +26,14 @@ there too, as comments, so that installing the file does not drag them in.
 |---|---|
 | `mdslides` | the whole converter, one executable script, no `.py` suffix |
 | `beamer.tex.tpl` | the Beamer preamble, external on purpose |
-| `tests/conftest.py` | fixtures, and `EXAMPLE` — a presentation in miniature |
+| `tests/conftest.py` | fixtures, and `EXAMPLE` — the presentation in miniature that stands in for the lecture, which is not in this repository |
 | `tests/test_mdslides.py` | the suite |
 | `requirements.txt` | the two runtime dependencies |
+| `pytest.ini` | testpaths, and deprecation warnings promoted to errors |
+| `README.md` | how to install it, how to use it, and the input format in full |
 | `TODO.md` | what is missing, wrong, or undecided |
-
-Every commit message is deliberately detailed — `git log` is the fine-grained
-record of *why* each thing is the way it is.
-
-**There is no presentation in this repository.** The lecture this was written
-for is content, not part of the converter, and lives in the author's teaching
-repository. What stands in for it is `EXAMPLE` in `tests/conftest.py`: one
-short document exercising every construct the renderer knows, which several
-tests assert invariants over rather than checking fixed strings.
+| `HANDOFF.md` | where things stand, and what lives outside the repository |
+| `LICENSE` | MIT |
 
 ## Current state
 
@@ -46,218 +45,55 @@ reproduce that).
 
 ## Input format
 
-Documented nowhere else, so here it is in full.
+Written out for the deck author in [`README.md`](README.md), under "Writing a
+deck", where every construct is documented and every example was run against
+the code. This section used to hold that account and no longer does: one
+description of the format, not two that drift apart.
 
-**Slide structure.** A heading at `--slide-level` (default 1) starts a frame;
-a heading above it becomes `\section`; a heading below it stays inside the
-frame (currently `\textbf{...}\par`, see remaining work). A thematic break
-`---` starts an untitled frame, as does any content before the first heading.
-A leading `---` is metadata, not a break.
+What the README does not say is which names implement it. The tables are all
+near the top of `mdslides`:
 
-**Frame attributes.** `# Title {.fragile}` — recognized classes become frame
-options; `{#id}` becomes `label=id`; `key=value` passes through. `[fragile]`
-is added automatically to any frame containing verbatim material, so it is
-rarely needed by hand.
+| Constant | What it decides |
+|---|---|
+| `FRAME_OPTIONS` | which `{.class}` on a heading becomes a frame option |
+| `SECTIONING_CLASSES` | `{.section}`, `{.subsection}`, `{.part}` |
+| `WIDTH_DIRECTIVES` | which directives read a bare number as a width |
+| `BRACKET_TITLE_DIRECTIVES` | which take `[title]` rather than `{title}` |
+| `SIBLING_DIRECTIVES` | which close a previous one of the same name |
+| `COMMAND_DIRECTIVES` | which emit `\name{...}` instead of an environment |
+| `DIRECTIVE_DEFAULT_ARGUMENTS` | `@columns` without arguments |
+| `LISTINGS_LANGUAGES` | fence word to `listings` language |
+| `LATEX_ESCAPES`, `URL_ESCAPES` | the two escape tables |
+| `TEMPLATE_DEFAULTS`, `FLAG_VARIABLES` | what every template variable falls back to |
 
-**Section separator slides.** `{.section}` on a heading (also `{.subsection}`
-and `{.part}`) opens that sectioning level:
+The sugar tables buy convenience only — an unregistered environment still
+works, you just write the brackets yourself. They carry the one detail worth
+not remembering: `block`-likes take `{title}`, `theorem`-likes take `[title]`.
 
-    # Part II: Symbolic execution {.section}   ->  \section{Part II: ...}
+Two properties of the format are worth stating here because they are design,
+not usage, and the rest of this file assumes them:
 
-It is a heading class rather than a slide level so that it drops into a deck
-whose frames are all `#`, without demoting every heading to `##`. A heading
-*above* the slide level is a section already; there the class only says which
-level. Give the heading content and it becomes the slide *after* the
-separator, so nothing written under it is dropped, and other classes still
-apply to that slide (`{.section .plain}`).
+**The syntax is what says how the contents are treated.** `@theorem ... @end`
+holds Markdown; `\begin{align} ... \end{align}` holds LaTeX and is emitted
+untouched. That is why both work without the tool knowing either name, and why
+no name-to-environment table is needed.
 
-The separator slide itself is **not** emitted next to the `\section`. It is
-hooked onto the sectioning level in the preamble, by `$sectionpages`:
-
-    \AtBeginSection[]{\frame[plain,noframenumbering]{\sectionpage}}
-
-which is what lets `section-titles: false` switch every one of them off, and
-gives one to a section made by a heading above the slide level too. `\...page`
-follows the theme, so a deck wanting a different divider overrides
-`\setbeamertemplate{section page}` from its `header-includes` — which also
-wins outright, because `$sectionpages` comes before `$headerincludes`.
-`[plain,noframenumbering]` is what a divider wants: no headline or footline,
-and no slide number consumed. `\frame[...]{...}` rather than a `frame`
-environment, so that no `\begin{frame}` appears in the preamble where
-anything counting the deck's slides would find it.
-
-The divider carries **the name alone**. Beamer's own `part`/`section`/
-`subsection page` templates print `\sectionname~\insertsectionnumber` and a
-`\vskip1em` above it — "Section 1" — and the template redefines all three
-with that line dropped, keeping each theme's colours, fonts and box.
-
-**`toc: true`** puts a table of contents after the title page, titled by
-`toc-title` (default `Outline`). That one cannot be a template variable of
-its own — a hyphen is not an identifier, so `string.Template` could never
-reach `$toc-title`.
-
-**The title slide.** `title`, `subtitle`, `author`, `institute` and `date`
-reach beamer's own title page. For a lecture deck the natural split is the
-lesson in the title and the course beneath it:
-
-    title:    'Symbolic Execution'
-    subtitle: 'SAV --- Static Analysis and Verification'
-
-Metadata values are **not** parsed as Markdown — they go into the template as
-they stand — but that means LaTeX in them works, so a title can carry
-`\textbf{...}`, `$maths$` and `\\` for a line break:
-
-    title: 'Lecture 7\\Symbolic Execution'
-
-Single-quote it, or YAML eats the backslashes. Beware that `short-title`
-then inherits the `\\` and the footline runs the words together; give an
-explicit `short-title` until that is fixed.
-
-**`handout: true`**, or `--handout`, empties `\xpause` and with it `\pausex`,
-so every frame is one page. It replaces the `% \newcommand{\xpause}[0]{}`
-that used to be commented out in the template and uncommented by hand.
-Overlay specifications written out in LaTeX (`<2->`) are untouched — beamer's
-own `classoption: handout` is the blunter instrument for those.
-
-**Short forms.** `short-title`, `short-author`, `short-institute` and
-`short-date` are what beamer puts in the footline, and each falls back to its
-long form when the deck does not give one. Giving one **explicitly empty**
-keeps it empty:
-
-    short-institute: ""     ->  \institute[]{...}, so the footline reads
-                                "Ondřej Lengál" and not
-                                "Ondřej Lengál (SAV'25, FIT VUT v Brně)"
-
-which is the only way to ask for nothing there. A key with no value at all
-(`short-institute:`) is YAML `None` and counts as *not given*, so it still
-falls back — the distinction is between absent and empty, not between falsy
-and truthy.
-
-Do **not** write `\section{...}` as a line of raw LaTeX instead: everything at
-the top level is wrapped into a frame, and a sectioning command has to sit
-between frames, so it either becomes a frame of its own or is absorbed into
-the one above it.
-
-**Environments.** Two syntaxes, and the choice of syntax is what says how the
-contents are treated:
-
-    @theorem[Pumping lemma]        \begin{align}
-    For every **regular** ...        x_1 &= y_2 \\
-    @end                           \end{align}
-    ^ contents are Markdown        ^ contents are LaTeX, untouched
-
-That is why `@theorem` and `\begin{align}` both work without the tool knowing
-either name, and why an environment of your own needs no registration.
-
-Directive arguments are read from the first character: `<`, `[` or `{` means
-the rest is LaTeX and is handed over exactly as written (overlays, optional
-arguments, multi-argument signatures). Anything else is *friendly*: a bare
-number is a fraction of `\textwidth` (`@column 0.3`), and a bare title is
-parsed as Markdown (`@block Results **so far**`). The sugar tables
-(`WIDTH_DIRECTIVES`, `BRACKET_TITLE_DIRECTIVES`) buy convenience only — an
-unlisted environment still works, you just write the brackets yourself. They
-do carry the one detail worth not remembering: `block`-likes take `{title}`,
-`theorem`-likes take `[title]`.
-
-Three things close a directive: `@end` (optionally naming what it closes, and
-verified when it does), the same name again for `SIBLING_DIRECTIVES` so a row
-of columns needs no `@end` between them, and a heading. `@end name` closes
-anything still open inside it, as `</ul>` does in HTML. A stray `@end` is
-reported on stderr and dropped. `COMMAND_DIRECTIVES` (`@note`, `@alert`, ...)
-emit `\note{...}` rather than an environment.
-
-**Quotes.** A straight `"` becomes a typographic one — `` ``like this'' ``,
-which LaTeX sets as “like this”. Which way a quote leans is decided from the
-character before it rather than by pairing them up, so an odd one cannot send
-the rest of the deck the wrong way round, and `10"` reads as an inch mark.
-Only prose is touched: quotes in `` `code` ``, in maths, in listings and
-inside raw LaTeX stay straight without having to be excluded, and `\"` is the
-way out. `smart: false` turns it off.
-
-**Highlighted text.** `==like this==` becomes `\hlbl{like this}` — the macro
-is the `highlight` metadata key, `hlbl` by default. It is the spelling the
-deck used before it was LaTeX, and it nests with emphasis either way round:
-`==**x**==` and `**==x==**` both work. The delimiters may not sit against
-whitespace, as with `**`, so `a == b` is arithmetic; a run of three or more
-`=` is left alone, so a setext heading underline is safe; and `$a == b$` and
-`` `a == b` `` are claimed by maths and code first.
-
-**Bracketed spans.** `[text]{.hlrd}` becomes `\hlrd{text}` — the class *is*
-the macro name, so any macro of your own works without being registered, and
-several nest with the first outermost (`[x]{.hlbl .hlgr}` → `\hlbl{\hlgr{x}}`).
-The contents are Markdown. Nothing checks that the macro exists, so a typo
-surfaces as an undefined control sequence from LaTeX.
-
-**Links.** `[text](url)` → `\href`, `<url>` → `\url`, and `[text](#label)` →
-`\hyperlink`, which pairs with the `{#label}` heading attribute. All three are
-coloured so they can be told from the prose — `urlcolor` and `linkcolor`
-choose the colour, `colorlinks: false` turns it off. Only the links in the
-text are coloured, never beamer's own navigation: hyperref's `colorlinks`
-would repaint the footline too, which on a dark theme puts blue on blue.
-
-**Images.** `![alt](f.png){width=0.8 clip}` → `\includegraphics`. A bare
-number is a fraction of the slide; anything else is a length. Unknown keys and
-bare flags pass through. An image alone in a paragraph *with* alt text becomes
-a captioned figure; the caption is parsed as Markdown. The title
-(`![](f.png "x")`) is dropped, as pandoc drops it.
-
-**Code.** ```` ```C ```` → `lstlisting[language={C}]`; ```` ```lstlisting ````
-means "this is listings input" and gets `escapechar=@` so `@$x_1$@` typesets
-as maths (`--escapechar` changes it). Unknown languages become plain listings
-rather than a LaTeX error.
-
-**Maths** `$...$` and `$$...$$` are claimed before emphasis, which is what
-keeps `$pc_1 \land pc_2$` intact.
-
-**Comments.** `%` on a line of its own is the everyday one:
-
-    * users try **input vectors**
-    % remember to mention the KLEE paper
-    * pros:
-
-`strip_comments()` removes such lines from the source before marko runs, so
-they reach neither the `.tex` nor the PDF. The line is *removed* rather than
-blanked, because a blank line would end a paragraph and make a list loose —
-a comment must not change the slide around it. Line numbers therefore shift,
-which nothing reports on yet.
-
-A `%` is only a comment when it is the first thing on the line. Partway along
-one it is left alone and passed through, where LaTeX still treats it as a
-comment — eating the rest of that line, which is the trap behind "no
-percentages" below. Write `\%` for a literal percent sign. Two places a
-leading `%` is content and is left alone: inside a fenced code block, where
-it may be Matlab or a `printf` format, and inside a verbatim LaTeX
-environment written out by hand.
-
-`<!-- ... -->` also works and is dropped, and it is the one to use for a
-block: over several lines, inline mid-sentence, or around a whole slide,
-which is how a deck parks the slides it is not giving today. **But at column
-0 between list items it splits the list in two**, because an HTML block
-interrupts a list the way any other block would:
-
-    * one
-    <!-- note -->        two \begin{itemize} blocks, one item in each
-    * two
-
-Indent it to the item's own content and the list stays whole — the same
-mechanism that makes a `\pausex` at column 0 behave differently from an
-indented one. A `%` line has no such problem, which is the reason to prefer
-it for a one-line note.
-
-In the metadata block, `<!-- ... -->` lines are stripped before the YAML is
-parsed, which is how a metadata line is disabled.
-
-**No percentages anywhere.** Widths are bare fractions or lengths. A `%`
-reaching LaTeX comments out the rest of its line.
+**Directive arguments are read from the first character.** `<`, `[` or `{`
+means the rest is LaTeX and is handed over exactly as written; anything else
+is *friendly* and interpreted — a bare number as a fraction of `\textwidth`,
+a bare title as Markdown.
 
 ## Design decisions worth not re-deciding
 
 1. **`string.Template` for the template, with `build_variables()` guaranteeing
    every variable.** It has no conditionals, so an absent variable cannot be
    skipped — an unsubstituted `$theme` would reach LaTeX and be read as maths.
-   `TEMPLATE_DEFAULTS` covers a document with no metadata at all. **This is the
-   main open decision**: wiring up the remaining optional preamble blocks
-   (`toc`, hyperref, ...) is what a `$if()$`/`$for()$` engine would buy.
+   `TEMPLATE_DEFAULTS` covers a document with no metadata at all. What a
+   `$if()$`/`$for()$` engine would still buy is now small — `titlegraphic`
+   and `logo`, the last of the ignored keys — since `$titlepage`,
+   `$sectionpages`, `$toc` and `$handout` are computed in Python already, and
+   hyperref's global `colorlinks` was rejected rather than deferred. The
+   question is kept open in `TODO.md`, "The template engine".
 2. **`-V` is applied to the metadata before anything is derived from it**, so
    `-V title=X` also reaches the short title in the footline.
 3. **`fontfamily` defaults to `lmodern`.** `palatino` only sets `\rmfamily`,
@@ -266,7 +102,22 @@ reaching LaTeX comments out the rest of its line.
 4. **`escapechar` only for `lstlisting`-tagged fences**, since a C snippet is
    free to contain an `@`.
 5. **`@columns` defaults to `[T]`.** Without it beamer centres columns against
-   each other and a short column of code floats beside a tall table.
+   each other and a short column of code floats beside a tall table. This is
+   the one decision here with no comment beside it in the source —
+   `DIRECTIVE_DEFAULT_ARGUMENTS` is bare.
+6. **`{.section}` is a heading class, not a slide level.** So it drops into a
+   deck whose frames are all `#` without demoting every heading to `##`. A
+   heading above the slide level is a section already; there the class only
+   says which level. The separator slide is hooked onto the sectioning level
+   in the preamble rather than emitted beside the `\section`, which is what
+   lets `section-titles: false` switch every one of them off at once, and
+   what gives one to a section made by a heading above the slide level too.
+   Commented at `mdslides` (`SECTION_PAGE_HOOKS`) and `beamer.tex.tpl`.
+7. **`handout: true` empties `\xpause`, and with it `\pausex`.** It replaces
+   the `% \newcommand{\xpause}[0]{}` that used to sit commented out in the
+   template and be uncommented by hand. Overlay specifications written out in
+   LaTeX (`<2->`) are untouched by it — beamer's own `classoption: handout`
+   is the blunter instrument for those.
 
 ## Marko specifics
 
@@ -308,7 +159,9 @@ reaching LaTeX comments out the rest of its line.
   *absent* from the template must go through `without_comments()` in the
   tests; the same care is needed when grepping by hand.
 - The `opts` fixture must take `mdslides` as a parameter; without it the name
-  resolves to nothing and ~120 tests fail at once.
+  resolves to the fixture object the decorator left behind rather than to the
+  module, and most of the suite fails at once with `AttributeError:
+  'FixtureFunctionDefinition' object has no attribute 'LISTINGS_ESCAPECHAR'`.
 
 ## Verification
 
@@ -317,30 +170,25 @@ are three kinds of check worth keeping:
 
 - **Compile tests** run `pdflatex`, on an inline document exercising every
   construct and on `EXAMPLE`. Skipped where pdflatex is absent, so the suite
-  needs nothing but the standard library plus pytest. These caught a missing
+  needs no TeX at all: beyond the converter's own `marko` and `PyYAML` it
+  wants nothing but the standard library and pytest. These caught a missing
   `\usepackage{listings}` that no unit test could see.
 - **Invariants over `EXAMPLE`** rather than fixed strings: every maths span and
   the `tabularx` table appear verbatim in the output, every frame holding a
-  listing is marked fragile, the frame count matches the number of `#`
-  headings. Add to `EXAMPLE` when adding a construct, and these come along.
+  listing is marked fragile, and the frame count matches the number of `#`
+  headings less the ones that only open a section. Add to `EXAMPLE` when
+  adding a construct, and these come along.
 - **Reading the built PDF.** `pdftotext -layout` found three faults on the code
-  slides that the tests were blind to. Rendering a page with `pdftoppm` and
-  looking at it found a column-alignment bug.
+  slides that the tests were blind to; rendering a page with `pdftoppm` and
+  looking at it found a column misalignment and a footline that had gone blue
+  on blue. Several bugs here were invisible until someone looked at the
+  output.
 
 ## Comparing against pandoc
 
-The reference is the pandoc build of the same lecture, which lives outside
-this repository — in the author's teaching repository, alongside the
-`macros.tex`, `stylesheet.tex` and `filter.py3` it needs. Its
-`symbolic-execution.md` is byte-identical to the lecture as first committed
-here, which is still recoverable with
-
-    git show 2d20d16:simplified.md
-
-though note that version predates the `@` syntax. The version converted to
-`@columns`/`@column` is `git show fad2063:simplified.md`, and the last one,
-self-contained after the highlight macros moved into the template, is
-`git show 3c59e82:simplified.md`.
+The reference is the pandoc build of the same lecture. `HANDOFF.md` says
+where that, and the deck's own source, live — neither is in this repository,
+and the comparison therefore cannot be rerun from a fresh clone.
 
 To compare fairly: copy `macros.tex`, `stylesheet.tex`, `filter.py3` and
 `klee.png` to a scratch directory alongside both sources, strip `\pausex` from
@@ -356,7 +204,8 @@ it, since `lstlisting` is more compact than pandoc's highlighted blocks.
 
 Note the original pandoc source uses `::: {.column}` fenced divs and is **no
 longer valid input** here — run it through and the fences come out as literal
-text. The two syntaxes diverged deliberately.
+text, `%` and all. The two syntaxes diverged deliberately; commit `3746e12`
+has the argument.
 
 ## Remaining work
 

@@ -706,9 +706,8 @@ $ pip install pytest
 $ pytest
 ```
 
-378 tests, about five seconds. Four of them run `pdflatex` and skip themselves
-when it is not installed, so the suite is green with nothing but pytest, marko
-and PyYAML. `pytest.ini` promotes deprecation warnings to errors, which is
+A few seconds. Four tests run `pdflatex` and skip themselves when it is not
+installed, so the suite is green with nothing but pytest, marko and PyYAML. `pytest.ini` promotes deprecation warnings to errors, which is
 deliberate: marko is the dependency most likely to break something quietly,
 since the converter registers custom elements against its parser internals.
 Run the suite after upgrading it.

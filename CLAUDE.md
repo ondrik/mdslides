@@ -85,18 +85,22 @@ block's `title:`, the way `@column 0.3` is sugar for `@column{0.3\textwidth}`.
 `SlideMetadata` is an ordinary block element at priority 9, above
 `ThematicBreak`.
 
-What it claims is drawn narrowly, and the reason is worth not rediscovering:
-**two thematic breaks with a slide between them have exactly the shape of a
-block.** The first cut of this claimed any `---`, YAML, `---`, and so ate the
-slide between every pair of breaks in the deck — silently, since a heading
-between them is a YAML comment. So `match()` refuses anything but the top
-level (`Source.expect_re` matches the raw buffer, and inside a container the
-lines still carry its prefix), the content may hold no blank line and no code
-fence, and `load_slide_metadata()` parses the YAML *before* the block is
-claimed, taking it only when it is a mapping naming a key in
-`SLIDE_METADATA_KEYS`. A setext heading still wins over all of it, because
-marko resolves that while parsing the paragraph above, before any element of
-ours is asked.
+**The opener is `===` and the closer `---`, and that asymmetry is the whole
+point.** The first cut used `---` for both, and two thematic breaks with a
+slide between them have exactly that shape — so it ate the slide between
+every pair of breaks in the deck, silently, since a heading between them is a
+YAML comment. Telling the two apart needed guesswork about the content. With
+`===` the opening line settles it, and a pair of breaks cannot be a block at
+all.
+
+The guards that guesswork needed are kept, because prose can still sit under
+a `===`: `match()` refuses anything but the top level (`Source.expect_re`
+matches the raw buffer, and inside a container the lines still carry its
+prefix), the content may hold no blank line and no code fence, and
+`load_slide_metadata()` parses the YAML *before* the block is claimed, taking
+it only when it is a mapping naming a key in `SLIDE_METADATA_KEYS`. A setext
+heading still wins over all of it, because marko resolves that while parsing
+the paragraph above, before any element of ours is asked.
 
 **Directive arguments are read from the first character.** `<`, `[` or `{`
 means the rest is LaTeX and is handed over exactly as written; anything else

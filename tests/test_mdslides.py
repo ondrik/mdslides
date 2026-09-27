@@ -1457,7 +1457,7 @@ def test_a_closed_environment_is_untouched_by_the_heading_rule(render, capsys):
 
 def test_slide_metadata_starts_a_frame_with_a_title(render):
     body = render(doc("""
-        ---
+        ===
         title: Why it grows
         ---
 
@@ -1469,29 +1469,29 @@ def test_slide_metadata_starts_a_frame_with_a_title(render):
 
 def test_slide_metadata_title_is_markdown(render):
     """The same answer a heading gives, which is the point of the key."""
-    body = render('---\ntitle: Why it **grows** by $x_1$\n---\n\nalpha\n')
+    body = render('===\ntitle: Why it **grows** by $x_1$\n---\n\nalpha\n')
     assert '{Why it \\textbf{grows} by $x_1$}' in body
 
 
 def test_slide_metadata_label_and_options(render):
-    body = render('---\ntitle: T\nlabel: growth\noptions: [t, plain]\n---\n\na\n')
+    body = render('===\ntitle: T\nlabel: growth\noptions: [t, plain]\n---\n\na\n')
     assert '\\begin{frame}[t,plain,label=growth]{T}' in body
 
 
 def test_slide_metadata_options_may_be_one_string(render):
-    body = render('---\noptions: plain\n---\n\na\n')
+    body = render('===\noptions: plain\n---\n\na\n')
     assert '\\begin{frame}[plain]' in body
 
 
 @pytest.mark.parametrize('level', ['part', 'section', 'subsection'])
 def test_slide_metadata_opens_a_sectioning_level(render, level):
-    body = render('---\n%s: Part II\n---\n\n' % level)
+    body = render('===\n%s: Part II\n---\n\n' % level)
     assert '\\%s{Part II}' % level in body
     assert '\\begin{frame}' not in body
 
 
 def test_slide_metadata_closed_by_three_dots(render):
-    body = render('---\ntitle: T\n...\n\nalpha\n')
+    body = render('===\ntitle: T\n...\n\nalpha\n')
     assert '\\begin{frame}{T}' in body
 
 
@@ -1518,7 +1518,7 @@ is claimed before any of this; a blank line above the block avoids it."""
 
 def test_slide_metadata_warns_about_a_key_it_does_not_know(render, capsys):
     """Only when the block is a block: it has to name something we know."""
-    body = render('---\ntitle: T\nnosuchkey: 1\n---\n\nalpha\n')
+    body = render('===\ntitle: T\nnosuchkey: 1\n---\n\nalpha\n')
     assert '\\begin{frame}{T}' in body
     err = capsys.readouterr().err
     assert 'nosuchkey' in err
@@ -1540,7 +1540,7 @@ mistake this feature must never make.
 The frame count differs between these cases, because a '---' below a line of
 text is CommonMark's setext underline; what matters is that nothing is lost
 and that no frame is configured."""
-    body = render('# One\n\n---\n%s\n---\n\nalpha\n' % block)
+    body = render('# One\n\n===\n%s\n---\n\nalpha\n' % block)
     assert 'alpha' in body
     assert '\\begin{frame}[' not in body, 'not settings, just text'
     if not block.startswith('#'):
@@ -1579,7 +1579,7 @@ def test_prose_between_breaks_is_not_promoted_to_settings(render):
     body = render(doc("""
         # One
 
-        ---
+        ===
         Note: this is prose
         Also: so is this
         ---
@@ -1598,7 +1598,7 @@ guard the match ran straight through the end of a quote or a list item."""
 
         > quoted
         >
-        > ---
+        > ===
         > title: not a slide
         > ---
         >
@@ -1635,20 +1635,20 @@ def test_a_fenced_block_between_breaks_is_not_torn_apart(render):
 
 
 def test_slide_metadata_itemsep_reaches_the_lists(render):
-    body = render('---\nitemsep: 1.2em\n---\n\n* a\n* b\n')
+    body = render('===\nitemsep: 1.2em\n---\n\n* a\n* b\n')
     assert '\\tightlist\n\\setlength{\\itemsep}{1.2em}' in body
 
 
 def test_slide_metadata_itemsep_reaches_a_nested_list(render):
     """Set on the renderer, so a list inside a directive is reached too."""
-    body = render('---\nitemsep: 2em\n---\n\n@block T\n1. a\n2. b\n@end\n')
+    body = render('===\nitemsep: 2em\n---\n\n@block T\n1. a\n2. b\n@end\n')
     assert '\\begin{enumerate}' in body
     assert '\\setlength{\\itemsep}{2em}' in body
 
 
 def test_slide_metadata_itemsep_does_not_leak_to_the_next_slide(render):
     body = render(doc("""
-        ---
+        ===
         itemsep: 2em
         ---
 

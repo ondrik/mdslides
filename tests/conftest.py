@@ -120,7 +120,7 @@ Nothing broken yet.
 # A figure
 ![A **captioned** figure](f.png){width=0.4}
 
----
+===
 title: A slide that says what it is
 label: block-form
 itemsep: 1.2em

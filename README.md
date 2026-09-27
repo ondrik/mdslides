@@ -288,11 +288,10 @@ paragraph is level 1, and that one does start a frame.)
 ### A slide's own metadata
 
 A heading is the short way to start a slide. The long way is a metadata block
-of its own — the same shape as the document's, and told from a thematic break
-the same way, by its closing fence:
+of its own, opened by `===` and closed by `---`:
 
 ```markdown
----
+===
 title: Why the path condition only ever grows
 label: growth
 itemsep: 1.2em
@@ -303,10 +302,15 @@ options: [t]
 * nothing ever removes one
 ```
 
+The two markers say different things, which is the point of having two.
+`===` is *this slide says what it is*; `---` is *and here it starts*, the
+same `---` that starts any other slide. A `---` is never an opener, so two
+ordinary breaks with a slide between them cannot be read as a block.
+
 These two are the same slide:
 
 ```markdown
-# Why it grows {#growth}     ==     ---
+# Why it grows {#growth}     ==     ===
                                     title: Why it grows
                                     label: growth
                                     ---
@@ -325,22 +329,18 @@ reach at all — **a slide with no title that still needs configuring**.
 | `itemsep` | the space between items of every list on the slide |
 | `part`, `section`, `subsection` | open that sectioning level, as `{.section}` does |
 
-**A block is only a block when it says something.** Two thematic breaks with
-a slide between them have exactly this shape, so the rule is deliberately
-narrow: the lines between the fences must be unbroken by a blank line, must
-parse as a YAML mapping, and must name at least one key from the table above.
-Anything else — prose, a heading, a `#` comment, an empty gap — is what it has
-always been, a pair of breaks with text between them. It is also matched only
-at the top level, so a `---` inside a list, a quote or a directive is
-untouched.
+**A block is only a block when it says something.** The lines between `===`
+and `---` must be unbroken by a blank line, must parse as a YAML mapping, and
+must name at least one key from the table above. Prose that happens to read
+as `key: value` is therefore still prose. It is also matched only at the top
+level, so a `===` inside a list, a quote or a directive is untouched, and a
+`===` on its own — with no block under it — is the literal text it always
+was.
 
-Four more things to know.
+Three more things to know.
 
-* **The first slide cannot use it**, because a block at the very start of a
-  file is the *document's* metadata. Put the document's own block first — an
-  empty `---` / `---` will do — or start with a heading.
-* **A block directly below a paragraph** is CommonMark's setext underline and
-  is claimed before any of this. Leave a blank line above it.
+* **A block directly below a paragraph** is CommonMark's setext underline —
+  `===` makes the line above it a heading — so leave a blank line above it.
 * **`itemsep` takes a length**, and a bare number means `em`, so `itemsep: 0`
   closes a list up rather than reaching LaTeX as an illegal unit. It reaches
   every list on the slide, including one nested in a directive or a column,

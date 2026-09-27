@@ -269,17 +269,19 @@ MACRO_LINE_RE = re.compile(r'[ \t]*(?:' + MACRO + r'[ \t]*)+$', re.MULTILINE)
 # The start of a LaTeX environment, '\begin{tabularx}'.
 BEGIN_ENV_RE = re.compile(r'[ \t]*\\begin\{([A-Za-z@*]+)\}')
 
-# A slide's own metadata block: '---', YAML, and a closing '---' or '...'.
-# Told from a thematic break by that closing fence, exactly as the document's
-# own block is (FRONTMATTER_RE); without one this is an ordinary break and
-# starts an untitled frame, which is what it has always done.
+# A slide's own metadata block: '===', YAML, and a closing '---'.
+#
+# The opener is not '---' on purpose.  A '---' starts a slide, and two of
+# them with a slide between have exactly the shape of a block, so an opener
+# of '---' had to be told from a pair of breaks by guesswork -- and the first
+# cut of this got it wrong and ate the slide between every pair.  '===' says
+# at the opening line which of the two this is, and a pair of breaks can no
+# longer be a block at all.  A bare '===' is left alone: it is the block that
+# starts a slide, and a slide wanting no settings needs no block.
 # The content is a run of *non-blank* lines that are not a fence of their
-# own.  Two thematic breaks with a slide between them have exactly the shape
-# of a block, and that slide is nearly always separated by blank lines, so
-# without this the text between them is eaten -- which is what the first cut
-# of this did.
+# own, which keeps a block from reaching past the slide it belongs to.
 SLIDE_METADATA_RE = re.compile(
-    r'(?m)---[ \t]*\n'
+    r'(?m)===[ \t]*\n'
     r'((?:(?!(?:---|\.\.\.|```|~~~)[ \t]*$)[^\n\S]*\S[^\n]*\n)+?)'
     r'(?:---|\.\.\.)[ \t]*(?:\n|\Z)')
 
@@ -934,8 +936,8 @@ still a break.
 
         # A block is claimed only when it says something this tool
         # understands.  Anything else -- prose that happens to be
-        # 'Note: this', a YAML comment, an empty gap -- is a pair of thematic
-        # breaks and has to stay one.
+        # 'Note: this', a YAML comment -- is text below a '===' line, and has
+        # to stay text.
         meta = load_slide_metadata(match.group(1))
         if not meta:
             return None
@@ -959,10 +961,9 @@ Reads the YAML between a slide block's fences, and says whether this is a
 slide block at all.
 
 None means it is not: the text is not a mapping, or names nothing this tool
-understands.  Deciding that here, before the block is claimed, is what lets a
-pair of thematic breaks with a slide between them go on being two breaks --
-a mapping is a poor description of a page of prose, and a page of prose that
-does parse as one still has to name a key we know.
+understands.  Deciding it here, before the block is claimed, keeps prose that
+happens to parse as a mapping from being read as settings -- a page about
+YAML, say, whose lines really are 'key: value'.
 """
     try:
         meta = yaml.safe_load(text)

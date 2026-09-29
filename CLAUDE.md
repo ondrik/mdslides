@@ -34,6 +34,7 @@ there too, as comments, so that installing the file does not drag them in.
 | `TODO.md` | what is missing, wrong, or undecided |
 | `HANDOFF.md` | where things stand, and what lives outside the repository |
 | `LICENSE` | MIT |
+| `vim/` | syntax file and filetype detection for the input format |
 
 ## Current state
 

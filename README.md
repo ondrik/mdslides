@@ -796,6 +796,34 @@ variables are left alone, so a typo reaches LaTeX as a stray `$` — which LaTeX
 reads as the start of maths, far from where you made the mistake.
 
 
+## Editor support
+
+A vim syntax file is in [`vim/`](vim). It loads on top of the stock Markdown
+syntax, so lists, emphasis and code fences keep working, and adds what this
+format puts on top: the two kinds of metadata block, the `@` directives, the
+`{...}` attribute list, all four maths spellings, `==highlight==`,
+`[text]{.class}`, `\pausex`, and the raw LaTeX that passthrough makes ordinary
+rather than exceptional — a `\begin{...}` environment is taken verbatim here,
+and is coloured as the content it is.
+
+```console
+$ mkdir -p ~/.vim/pack/mdslides/start
+$ ln -s ~/src/mdslides/vim ~/.vim/pack/mdslides/start/mdslides
+```
+
+A deck is an ordinary `.md` file, so there is no extension to go by and
+switching every Markdown file to this syntax would be presumptuous. Instead
+the file is read: a deck is one whose first eighty lines hold a construct
+that means nothing in Markdown and something here — a `@directive` opening a
+line, a `===` block, or a `\pausex`. Fenced code is skipped while looking, so
+a document *about* the format is not mistaken for one written in it.
+
+To settle it by hand, name the file `.mdslides`, or end the deck with
+
+```markdown
+<!-- vim: set filetype=mdslides: -->
+```
+
 ## Developing
 
 ```console

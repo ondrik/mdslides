@@ -1003,6 +1003,23 @@ so that '**bold**' and '$x$' work in it exactly as they do in a heading.
 
 
 ###########################################
+def itemsep_lengths(value):
+    """itemsep_lengths(object) -> [str] or None
+
+The 'itemsep:' of a slide, as one length per nesting level.
+
+A lone value applies to every level, which is what it has always meant.  A
+list gives the first, second, third and so on, and the last entry stands for
+everything deeper -- so a two-item list does not leave a list nested three
+deep unset, it gives it the second value.
+"""
+    if value is None:
+        return None
+    lengths = [length(item) for item in as_list(value)]
+    return lengths or None
+
+
+###########################################
 def length(value):
     """length(object) -> str or None
 
@@ -1438,8 +1455,13 @@ happens inside `inline code', where the text is meant to be literal.
     #: emphasis can still tell what came before it
     _previous = ''
 
-    #: 'itemsep:' from the slide being rendered, or None
+    #: 'itemsep:' from the slide being rendered, one length per nesting
+    #: level, or None
     _itemsep = None
+
+    #: how many lists deep the renderer is, so that itemsep can tell the
+    #: levels apart
+    _list_depth = 0
 
     ####################
     # document structure
@@ -1448,6 +1470,7 @@ happens inside `inline code', where the text is meant to be literal.
     def render_document(self, element):
         self._previous = ''             # marko reuses the renderer instance
         self._itemsep = None
+        self._list_depth = 0
         parts = []
         for kind, heading, nodes, meta in self.split_slides(element.children):
             if kind == 'section':
@@ -1550,7 +1573,8 @@ thematic break starts a frame with no title.
         # Set on the renderer rather than threaded through every block, so
         # that a list nested in a directive or a column is reached too.  Put
         # back afterwards: it is this frame's business and no other's.
-        previous, self._itemsep = self._itemsep, length(meta.get('itemsep'))
+        previous = self._itemsep
+        self._itemsep = itemsep_lengths(meta.get('itemsep'))
         body = ''.join(self.render(node) for node in nodes)
         self._itemsep = previous
 
@@ -1596,12 +1620,33 @@ A slide's title, as Markdown where it parsed as Markdown.
         # A list whose items are single paragraphs is set tight, the way
         # pandoc does it; otherwise beamer leaves a gap between every item.
         tight = '\\tightlist\n' if getattr(element, 'tight', False) else ''
+
+        # Depth counts every list, not every itemize, so an enumerate inside
+        # an itemize is the second level -- which is what it looks like on
+        # the slide, and beamer sets it with the second-level template.
+        self._list_depth += 1
         # 'itemsep:' on the slide.  After \tightlist, which zeroes it, and
         # inside the environment, since itemize resets \itemsep on entry.
-        if self._itemsep is not None:
-            tight += '\\setlength{\\itemsep}{%s}\n' % self._itemsep
+        itemsep = self.itemsep_at(self._list_depth)
+        if itemsep is not None:
+            tight += '\\setlength{\\itemsep}{%s}\n' % itemsep
+        try:
+            body = self.render_children(element)
+        finally:
+            self._list_depth -= 1
+
         return '\\begin{%s}\n%s%s\\end{%s}\n' % (
-            environment, tight, self.render_children(element), environment)
+            environment, tight, body, environment)
+
+    def itemsep_at(self, level):
+        """itemsep_at(int) -> str or None
+
+The 'itemsep:' for a list at this nesting level, the last one given
+standing for every level below those named.
+"""
+        if not self._itemsep:
+            return None
+        return self._itemsep[min(level, len(self._itemsep)) - 1]
 
     def render_list_item(self, element):
         body = self.render_children(element).lstrip()

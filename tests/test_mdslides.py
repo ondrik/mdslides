@@ -1646,6 +1646,73 @@ def test_slide_metadata_itemsep_reaches_a_nested_list(render):
     assert '\\setlength{\\itemsep}{2em}' in body
 
 
+def test_slide_metadata_itemsep_per_level(render):
+    """A list gives the first, second, third nesting level."""
+    body = render(doc("""
+        ===
+        itemsep: [1.2em, 0.6em, 0.2em]
+        ---
+
+        * one
+            * two
+                * three
+    """))
+    assert '\\begin{itemize}\n\\tightlist\n\\setlength{\\itemsep}{1.2em}' in body
+    assert '\\setlength{\\itemsep}{0.6em}' in body
+    assert '\\setlength{\\itemsep}{0.2em}' in body
+
+
+def test_slide_metadata_itemsep_last_value_covers_deeper_levels(render):
+    """Otherwise a two-item list would leave the third level unset, which is
+never what naming two levels means."""
+    body = render(doc("""
+        ===
+        itemsep: [1em, 2em]
+        ---
+
+        * one
+            * two
+                * three
+                    * four
+    """))
+    assert body.count('\\setlength{\\itemsep}{2em}') == 3
+
+
+def test_slide_metadata_itemsep_scalar_applies_to_every_level(render):
+    """What a lone value has always meant, and must go on meaning."""
+    body = render('===\nitemsep: 1em\n---\n\n* one\n    * two\n')
+    assert body.count('\\setlength{\\itemsep}{1em}') == 2
+
+
+def test_slide_metadata_itemsep_counts_every_kind_of_list(render):
+    """An enumerate inside an itemize is the second level: that is what it
+looks like on the slide, and what beamer sets with its second-level
+template."""
+    body = render('===\nitemsep: [1em, 2em]\n---\n\n* one\n    1. two\n')
+    assert '\\begin{enumerate}\n\\tightlist\n\\setlength{\\itemsep}{2em}' in body
+
+
+def test_slide_metadata_itemsep_depth_is_restored_between_slides(render):
+    """The depth counter is renderer state, so a slide must not start one
+level in because the last one ended there."""
+    body = render(doc("""
+        ===
+        itemsep: [1em, 2em]
+        ---
+
+        * one
+            * two
+
+        ===
+        itemsep: [1em, 2em]
+        ---
+
+        * one again
+    """))
+    assert body.count('\\setlength{\\itemsep}{1em}') == 2
+    assert body.count('\\setlength{\\itemsep}{2em}') == 1
+
+
 def test_slide_metadata_itemsep_does_not_leak_to_the_next_slide(render):
     body = render(doc("""
         ===

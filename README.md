@@ -326,7 +326,7 @@ reach at all — **a slide with no title that still needs configuring**.
 | `title` | the frame title, parsed as Markdown |
 | `label` | becomes `label=`, which `[text](#label)` links to |
 | `options` | frame options, a list or one string |
-| `itemsep` | the space between items of every list on the slide |
+| `itemsep` | the space between list items; one length, or one per nesting level |
 | `part`, `section`, `subsection` | open that sectioning level, as `{.section}` does |
 
 **A block is only a block when it says something.** The lines between `===`
@@ -344,7 +344,18 @@ Three more things to know.
 * **`itemsep` takes a length**, and a bare number means `em`, so `itemsep: 0`
   closes a list up rather than reaching LaTeX as an illegal unit. It reaches
   every list on the slide, including one nested in a directive or a column,
-  and does not leak into the next slide.
+  and does not leak into the next slide. Give a **list** to set the nesting
+  levels apart:
+
+  ```yaml
+  itemsep: [1.2em, 0.6em, 0.2em]     # first, second, third level
+  ```
+
+  The last one given covers everything deeper, so a two-item list never
+  leaves the third level unset. A lone value applies to every level, as it
+  always has. Depth counts every list, not every `itemize`, so an `enumerate`
+  inside an `itemize` is the second level — which is what it looks like on
+  the slide, and which level beamer's own templates set.
 * **A key it does not know is reported** on stderr and ignored — but only when
   the block is a block. A block whose *only* key is a typo names nothing we
   know, so it stays a pair of breaks, silently.

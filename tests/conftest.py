@@ -66,7 +66,7 @@ header-includes: |
 * a symbolic state $\mathit{st} = (\mathit{line}, \mathit{store}, \mathit{pc})$
 * two terminal nodes have distinct $pc_1 \land pc_2$
 * $\mathit{store} : \mathit{Mem} \rightharpoonup \mathit{Sym}$ is partial
-* all values of the input: $2^{80}$
+* all values of the input: $2^{80}$, or \(2^{80}\) written LaTeX's way
 * $P($`counter == 10`$) = 0.5$ for a uniform distribution
 
 # A listing

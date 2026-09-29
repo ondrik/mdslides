@@ -1064,6 +1064,47 @@ def test_math_display(render):
 
 
 @pytest.mark.parametrize('markdown, expected', [
+    pytest.param('\\(x_1 \\land y_2\\)', '\\(x_1 \\land y_2\\)', id='inline'),
+    pytest.param('\\[\\bigvee_i a_i\\]', '\\[\\bigvee_i a_i\\]', id='display'),
+    pytest.param('a \\(x_1\\) b', 'a \\(x_1\\) b', id='mid-sentence'),
+])
+def test_latex_maths_delimiters_survive(render, markdown, expected):
+    """marko read the '\\(' as an escaped bracket and render_literal dropped
+the backslash, so the maths became prose -- and the contents were parsed as
+Markdown on the way, which is what ate the underscores."""
+    assert expected in render('# S\n\n%s\n' % markdown)
+
+
+def test_the_renderers_own_display_maths_is_valid_input(render):
+    """It emits '\\[...\\]' for '$$...$$', so its output was not input to it."""
+    once = render('# S\n\n$$a_1 + b_2$$\n')
+    assert '\\[a_1 + b_2\\]' in once
+    twice = render('# S\n\n\\[a_1 + b_2\\]\n')
+    assert '\\[a_1 + b_2\\]' in twice
+
+
+def test_latex_inline_maths_does_not_cross_a_newline(render):
+    """As with '$...$', so that an unclosed one cannot run away with the rest
+of the paragraph.  The delimiter is then an ordinary escaped bracket again,
+which is where the backslash goes."""
+    body = render('# S\n\nan \\(unclosed one\nand the next line\n')
+    assert 'an (unclosed one' in body
+    assert 'and the next line' in body
+
+
+def test_an_escaped_backslash_before_a_paren_is_not_maths(render):
+    body = render('# S\n\nnot maths: \\\\(x\\\\)\n')
+    assert '\\(x\\)' in body
+
+
+def test_plain_brackets_need_no_escaping(render):
+    """Which is the way out, now that an escaped one is LaTeX's display
+maths: prose is not escaped here, so a bracket can simply be written."""
+    body = render('# S\n\nsee [1] and [2, 3] for details\n')
+    assert 'see [1] and [2, 3] for details' in body
+
+
+@pytest.mark.parametrize('markdown, expected', [
     pytest.param('A $$y$$ then $a _b_ c$ end.',
                  'A \\[y\\] then $a _b_ c$ end.', id='underscores'),
     pytest.param('A $$y$$ then $a *b* c$ end.',

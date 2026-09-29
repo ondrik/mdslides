@@ -804,6 +804,34 @@ class MathDisplay(marko.inline.InlineElement):
     parse_children = False
 
 
+class LatexMathDisplay(marko.inline.InlineElement):
+    """Display maths in LaTeX's own spelling, '\\[ ... \\]'.
+
+Claimed for the same reason '$$...$$' is: so that Markdown never looks
+inside.  Left to marko the '\\[' is an escaped bracket, a Literal whose
+backslash render_literal() then drops -- so the maths became prose, silently,
+and the contents were parsed as Markdown on the way.  That the renderer
+*emits* this spelling for display maths made it worse: its own output was not
+valid input to it.
+"""
+
+    priority = 9
+    pattern = re.compile(r'(?<!\\)\\\[([\s\S]+?)(?<!\\)\\\]')
+    parse_children = False
+
+
+class LatexMath(marko.inline.InlineElement):
+    """Inline maths in LaTeX's own spelling, '\\( ... \\)'.
+
+As LatexMathDisplay, and like '$...$' it does not cross a newline, so an
+unclosed one cannot run away with the rest of the paragraph.
+"""
+
+    priority = 9
+    pattern = re.compile(r'(?<!\\)\\\(([^\n]+?)(?<!\\)\\\)')
+    parse_children = False
+
+
 class Math(marko.inline.InlineElement):
     """Inline maths, '$ ... $'.
 
@@ -1307,7 +1335,8 @@ def markdown_extension():
 The elements above, as an extension to register with marko.
 """
     return marko.helpers.MarkoExtension(
-        elements=[MathDisplay, Math, Graphic, Span, Highlight, RawLatexInline,
+        elements=[MathDisplay, LatexMathDisplay, LatexMath, Math, Graphic,
+                  Span, Highlight, RawLatexInline,
                   RawLatexEnvironment, RawLatexMacroLine, SlideMetadata,
                   Directive, StrayDirectiveEnd])
 
@@ -1785,6 +1814,13 @@ is a Literal and never reaches this either, which is the way out.
 
     def render_math_display(self, element):
         return '\\[%s\\]' % element.children
+
+    def render_latex_math_display(self, element):
+        # back exactly as written: the author asked for this spelling
+        return '\\[%s\\]' % element.children
+
+    def render_latex_math(self, element):
+        return '\\(%s\\)' % element.children
 
     def render_raw_latex_inline(self, element):
         return element.children

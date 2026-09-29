@@ -545,11 +545,18 @@ the errors `--pdf` does not echo: you get only the name of the log.
 
 **Maths.** `$...$` and `$$...$$` are claimed ahead of emphasis, which is what
 keeps `$pc_1 \land pc_2$` and `$a *b* c$` intact. Display maths becomes
-`\[...\]`, and a display and an inline formula may share a paragraph. Only the
-`$` spellings work, though — `\(x\)` and `\[y\]` typed in the source silently
-lose their backslashes. Two inline spans written with nothing at all between
-them (`$x$$y$`) are ambiguous, since that could be a display opener: the first
-is claimed and the second passes through, which LaTeX still typesets.
+`\[...\]`, and a display and an inline formula may share a paragraph.
+
+LaTeX's own spellings work too — `\(x_1\)` and `\[y_2\]` — and come back as
+written, so the converter's output is valid input to it. The cost is that **a
+backslash before a bracket is maths, not an escape**: write `[1]` rather than
+`\[1\]` when you want a literal bracket. Nothing here needs escaping for
+Markdown's sake anyway, since a bracket only means something when a `(url)` or
+a `{.class}` follows it.
+
+Two inline spans written with nothing at all between them (`$x$$y$`) are
+ambiguous, since that could be a display opener: the first is claimed and the
+second passes through, which LaTeX still typesets.
 
 **Highlighting.** `==like this==` becomes `\hlbl{like this}`; the macro is the
 `highlight` metadata key. It nests with emphasis either way round —
@@ -678,9 +685,9 @@ Escaping happens in one place in your prose: inside `` `inline code` ``, where
 the text is meant to be literal, and where all ten of the reserved characters
 are handled for you. (A link's destination is escaped too — `#` and `%` get a
 backslash, braces are percent-encoded — so a URL needs nothing by hand.) That
-has one sharp edge — a code span containing `$...$` or a `\macro` is
-destroyed, because maths and raw LaTeX are claimed first. Write the maths
-outside the span:
+has one sharp edge — a code span containing `$...$`, `\(...\)`, `\[...\]` or
+a `\macro` is destroyed, because maths and raw LaTeX are claimed first. Write
+the maths outside the span:
 
 ```markdown
 $P($`counter == 10`$) = 0.5$

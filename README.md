@@ -889,7 +889,8 @@ $ pip install pytest
 $ pytest
 ```
 
-A few seconds. Four tests run `pdflatex` and skip themselves when it is not
+A few seconds. Some tests run `pdflatex` and some run `vim`, over the syntax
+file in `vim/`; both groups skip themselves when the program is not
 installed, so the suite is green with nothing but pytest, marko and PyYAML. `pytest.ini` promotes deprecation warnings to errors, which is
 deliberate: marko is the dependency most likely to break something quietly,
 since the converter registers custom elements against its parser internals.

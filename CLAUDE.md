@@ -28,6 +28,7 @@ there too, as comments, so that installing the file does not drag them in.
 | `beamer.tex.tpl` | the Beamer preamble, external on purpose |
 | `tests/conftest.py` | fixtures, and `EXAMPLE` — the presentation in miniature that stands in for the lecture, which is not in this repository |
 | `tests/test_mdslides.py` | the suite |
+| `tests/test_vim.py` | the syntax file, checked by asking vim what it coloured |
 | `requirements.txt` | the two runtime dependencies |
 | `pytest.ini` | testpaths, and deprecation warnings promoted to errors |
 | `README.md` | how to install it, how to use it, and the input format in full |
@@ -191,7 +192,7 @@ a bare title as Markdown.
 ## Verification
 
 `pytest.ini` promotes deprecation warnings to errors. Beyond unit tests there
-are three kinds of check worth keeping:
+are four kinds of check worth keeping:
 
 - **Compile tests** run `pdflatex`, on an inline document exercising every
   construct and on `EXAMPLE`. Skipped where pdflatex is absent, so the suite
@@ -204,6 +205,13 @@ are three kinds of check worth keeping:
   headings, less the ones that only open a section, plus the slides declared
   by a metadata block of their own. Add to `EXAMPLE` when adding a construct,
   and these come along.
+- **Probing the vim syntax file**, by opening a document under it and asking
+  `synID()` which group every character fell into. Reading the patterns
+  proves nothing: ordering decides most of what a vim syntax file does, and
+  the first draft of that one was wrong about it twice. One of these probes
+  `EXAMPLE` and fails if vim flags an *error* anywhere in it, which is what
+  catches a construct added to the format and not to the syntax — the way it
+  fell behind twice before the tests existed. Skipped where vim is absent.
 - **Reading the built PDF.** `pdftotext -layout` found three faults on the code
   slides that the tests were blind to; rendering a page with `pdftoppm` and
   looking at it found a column misalignment and a footline that had gone blue

@@ -1664,6 +1664,11 @@ happens inside `inline code', where the text is meant to be literal.
     #: levels apart
     _list_depth = 0
 
+    #: how many *ordered* lists deep, which is a different number: LaTeX
+    #: counts its enumerate levels among themselves, so an enumerate inside
+    #: a bullet list is still the first of them and counts with enumi
+    _enum_depth = 0
+
     ####################
     # document structure
     ####################
@@ -1672,6 +1677,7 @@ happens inside `inline code', where the text is meant to be literal.
         self._previous = ''             # marko reuses the renderer instance
         self._itemsep = None
         self._list_depth = 0
+        self._enum_depth = 0
         parts = []
         for kind, heading, nodes, meta in self.split_slides(element.children):
             if kind == 'section':
@@ -1826,6 +1832,8 @@ A slide's title, as Markdown where it parsed as Markdown.
         # an itemize is the second level -- which is what it looks like on
         # the slide, and beamer sets it with the second-level template.
         self._list_depth += 1
+        if element.ordered:
+            self._enum_depth += 1
         # 'itemsep:' on the slide.  After \tightlist, which zeroes it, and
         # inside the environment, since itemize resets \itemsep on entry.
         itemsep = self.itemsep_at(self._list_depth)
@@ -1843,16 +1851,18 @@ A slide's title, as Markdown where it parsed as Markdown.
             delimiter, counter, start = marker
             if (delimiter, counter) != ('%s.', '1'):
                 options = '[%s]' % (delimiter % counter)
-            if start != 1 and self._list_depth <= len(ENUM_COUNTERS):
+            if start != 1 and self._enum_depth <= len(ENUM_COUNTERS):
                 # \setcounter, not a package: the counter is one behind the
-                # first \item, and LaTeX has one per level
+                # first \item, and LaTeX has one per enumerate level
                 tight += '\\setcounter{%s}{%d}\n' % (
-                    ENUM_COUNTERS[self._list_depth - 1], start - 1)
+                    ENUM_COUNTERS[self._enum_depth - 1], start - 1)
 
         try:
             body = self.render_children(element)
         finally:
             self._list_depth -= 1
+            if element.ordered:
+                self._enum_depth -= 1
 
         return '\\begin{%s}%s\n%s%s\\end{%s}\n' % (
             environment, options, tight, body, environment)

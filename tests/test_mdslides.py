@@ -1733,6 +1733,35 @@ def test_a_list_starting_elsewhere_keeps_its_style(render):
     assert '\\begin{enumerate}[(a)]' in body
 
 
+def test_an_enumerate_inside_a_bullet_list_is_still_the_first_level(render):
+    """LaTeX counts its enumerate levels among themselves, so an enumerate
+nested in an itemize belongs to \\enumi.  Counting every list instead gave it
+\\enumii, which exists but is not the counter this list is using -- so the
+start was set on the wrong one and silently did nothing."""
+    body = render(doc("""
+        # S
+
+        * a bullet
+
+            (c) starting at three
+            (d) four
+    """))
+    assert '\\setcounter{enumi}{2}' in body
+    assert 'enumii' not in body
+
+
+def test_three_levels_each_keep_their_own_template(render):
+    body = render(doc("""
+        # S
+
+        (a) outer
+            (i) middle
+                (1) inner
+    """))
+    for template in ('[(a)]', '[(i)]', '[(1)]'):
+        assert '\\begin{enumerate}%s' % template in body
+
+
 def test_a_nested_list_counts_from_its_own_counter(render):
     """LaTeX has a counter per level, and the nested list gets its own."""
     body = render(doc("""

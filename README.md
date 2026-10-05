@@ -554,6 +554,18 @@ Two details worth knowing:
 Written differently, written separately: `(a)` and `a)` are two lists, not
 one, the same way `*` and `-` are.
 
+They nest, each level keeping the marker it was written with:
+
+```markdown
+(a) outer
+    (i) middle
+        (1) inner
+```
+
+LaTeX allows four levels of list nesting and no more — a fifth is
+`LaTeX Error: Too deeply nested`, which is its limit rather than this
+tool's, and a deck of four plain `1.` levels hits it just the same.
+
 ### Images
 
 ```markdown

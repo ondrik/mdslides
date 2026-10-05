@@ -518,6 +518,42 @@ is off; `header-includes: \lstset{numbers=left}` turns it on — the options
 need that `\lstset` around them, or they land in the preamble as loose text
 and the build stops with `Missing \begin{document}`.
 
+### Ordered lists
+
+The marker you write is the one that appears. `1.` is an ordinary numbered
+list, and the lettered and roman forms work as they read:
+
+```markdown
+(a) first
+(b) second
+
+(i) roman one
+(ii) roman two
+
+(A) upper case
+b) one parenthesis is enough
+```
+
+The items stay Markdown — `**bold**`, maths, nested lists and all — because
+only the marker changed.
+
+**A list starts where it says it does.** `2.` begins at two, `(c)` at the
+third letter, `(iv)` at the fourth numeral; the style comes from the marker
+and the number from its value, so `(c)` is the alphabetic list from `c`, not
+a literal `c` in front of every item.
+
+Two details worth knowing:
+
+* **A letter needs a parenthesis.** `(a)` and `a)` are lists; `a.` is not,
+  because a line beginning `A. Turing wrote` would otherwise become one.
+  Digits keep CommonMark's `1.` as well as `1)`.
+* **A lone `i` is roman**, since that is what anyone writing `(i)` means.
+  Every other single letter is alphabetic, so `(v)` is the twenty-second
+  letter rather than five. Ambiguity has to fall somewhere.
+
+Written differently, written separately: `(a)` and `a)` are two lists, not
+one, the same way `*` and `-` are.
+
 ### Images
 
 ```markdown
@@ -730,7 +766,10 @@ The ones that have actually cost time:
   silently eats the first character of the body as the title.
 * **Task lists misfire**: `- [ ] a task` becomes `\item [ ] a task`, where
   LaTeX reads the brackets as `\item`'s optional label.
-* **An ordered list's start number is ignored** — `5.` renumbers to 1.
+* **A list that does not start at 1 cannot interrupt a paragraph.** That is
+  CommonMark's rule, and it holds for every spelling: `2.` or `(c)` directly
+  under an item's text is part of that text, not a nested list. Leave a blank
+  line above it.
 * **An unterminated `\begin{env}`** reaches as far as the next heading, which
   is where the frame ends, and is reported on stderr as `'\begin{align}' was
   never closed`. What it did swallow is still emitted, so LaTeX gets an

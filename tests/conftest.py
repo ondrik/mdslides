@@ -130,6 +130,9 @@ options: [t]
 * the block form of a heading, which an untitled frame had no way to use
 * `itemsep` reaches this list
 
+(a) a lettered list, from the marker alone
+(b) with **Markdown** still in the items
+
 # Used materials from
 * Jan Strejček, Masaryk University
 * Michael Hicks, University of Maryland

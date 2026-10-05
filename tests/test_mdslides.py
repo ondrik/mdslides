@@ -1687,6 +1687,115 @@ def test_slide_metadata_itemsep_reaches_a_nested_list(render):
     assert '\\setlength{\\itemsep}{2em}' in body
 
 
+###########################################
+# ordered lists: what the marker says
+###########################################
+
+@pytest.mark.parametrize('markdown, expected', [
+    pytest.param('(a) one\n(b) two\n', '[(a)]', id='parens-alpha'),
+    pytest.param('(A) one\n(B) two\n', '[(A)]', id='parens-upper'),
+    pytest.param('(i) one\n(ii) two\n', '[(i)]', id='parens-roman'),
+    pytest.param('(I) one\n(II) two\n', '[(I)]', id='parens-upper-roman'),
+    pytest.param('a) one\nb) two\n', '[a)]', id='one-paren'),
+    pytest.param('(1) one\n(2) two\n', '[(1)]', id='parens-arabic'),
+    pytest.param('1) one\n2) two\n', '[1)]', id='arabic-paren'),
+])
+def test_list_marker_sets_the_template(render, markdown, expected):
+    """What the author wrote the first marker as is what the list looks
+like: beamer reads an enumerate's optional argument as that template."""
+    body = render('# S\n\n%s' % markdown)
+    assert '\\begin{enumerate}%s' % expected in body
+
+
+def test_a_plain_ordered_list_is_unchanged(render):
+    """Every deck written before this must render exactly as it did."""
+    body = render('# S\n\n1. one\n2. two\n')
+    assert '\\begin{enumerate}\n\\tightlist\n\\item one' in body
+    assert '[' not in body.split('\\item')[0]
+    assert 'setcounter' not in body
+
+
+@pytest.mark.parametrize('markdown, counter', [
+    pytest.param('2. two\n3. three\n', 1, id='arabic'),
+    pytest.param('(c) three\n(d) four\n', 2, id='alpha'),
+    pytest.param('(iv) four\n(v) five\n', 3, id='roman'),
+])
+def test_a_list_starts_where_it_says(render, markdown, counter):
+    """The counter is one behind the first \\item."""
+    body = render('# S\n\n%s' % markdown)
+    assert '\\setcounter{enumi}{%d}' % counter in body
+
+
+def test_a_list_starting_elsewhere_keeps_its_style(render):
+    """'(c)' is the alphabetic template from its third letter, not a literal
+'c' in front of every item."""
+    body = render('# S\n\n(c) three\n(d) four\n')
+    assert '\\begin{enumerate}[(a)]' in body
+
+
+def test_a_nested_list_counts_from_its_own_counter(render):
+    """LaTeX has a counter per level, and the nested list gets its own."""
+    body = render(doc("""
+        # S
+
+        1. outer
+        2. outer two
+
+            (c) nested
+    """))
+    assert '\\begin{enumerate}[(a)]' in body
+    assert '\\setcounter{enumii}{2}' in body
+
+
+@pytest.mark.parametrize('nested', [
+    pytest.param('2. nested plain', id='arabic'),
+    pytest.param('(c) nested', id='alpha'),
+])
+def test_a_list_not_starting_at_one_cannot_interrupt_an_item(render, nested):
+    """CommonMark's rule, and ours reads it the same way for every spelling:
+without a blank line above it the marker is part of the item's own text.
+A plain '2.' behaves identically, so this is not something the lettered
+markers introduced."""
+    body = render('# S\n\n1. outer\n2. outer two\n    %s\n' % nested)
+    assert body.count('\\begin{enumerate}') == 1
+    assert nested in body
+
+
+def test_a_lettered_list_nests_under_an_item(render):
+    """It has to interrupt the item's paragraph to do so, which CommonMark
+allows only for a list starting at one -- a rule marko tests by looking for
+the digit."""
+    body = render('# S\n\n1. outer\n2. outer two\n    (a) nested\n')
+    assert '\\begin{enumerate}[(a)]\n\\tightlist\n\\item nested' in body
+
+
+def test_list_items_are_still_markdown(render):
+    body = render('# S\n\n(a) one with **bold** and $x_1$\n')
+    assert '\\item one with \\textbf{bold} and $x_1$' in body
+
+
+def test_differently_written_markers_are_different_lists(render):
+    """'(a)' and 'a)' do not continue each other."""
+    body = render('# S\n\n(a) one\n\na) two\n')
+    assert '\\begin{enumerate}[(a)]' in body
+    assert '\\begin{enumerate}[a)]' in body
+
+
+@pytest.mark.parametrize('line', [
+    pytest.param('A. Turing wrote about machines', id='initial'),
+    pytest.param('i.e. this is prose', id='ie'),
+    pytest.param('e.g. and so is this', id='eg'),
+    pytest.param('Note. a sentence', id='word'),
+    pytest.param('I. am not a list', id='pronoun'),
+])
+def test_a_letter_and_a_full_stop_is_not_a_list(render, line):
+    """Which is why a letter needs a parenthesis: 'A.' would make a list of
+a bibliography."""
+    body = render('# S\n\n%s\n' % line)
+    assert line in body
+    assert '\\begin{enumerate}' not in body
+
+
 def test_slide_metadata_itemsep_per_level(render):
     """A list gives the first, second, third nesting level."""
     body = render(doc("""

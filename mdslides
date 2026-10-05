@@ -269,6 +269,26 @@ MACRO_LINE_RE = re.compile(r'[ \t]*(?:' + MACRO + r'[ \t]*)+$', re.MULTILINE)
 # The start of a LaTeX environment, '\begin{tabularx}'.
 BEGIN_ENV_RE = re.compile(r'[ \t]*\\begin\{([A-Za-z@*]+)\}')
 
+# An ordered list's marker, extending CommonMark's '1.' and '1)' with the
+# lettered and roman forms a slide actually wants: '(a)', 'b)', '(iv)', '(1)'.
+#
+# A letter or a numeral is accepted only against a parenthesis, never as
+# 'A.', which would turn a line beginning 'A. Turing wrote' into a list.  The
+# bare '1.' keeps its CommonMark meaning, parentheses and all.
+ROMAN_RE = re.compile(
+    r'(?i)m{0,3}(?:cm|cd|d?c{0,3})(?:xc|xl|l?x{0,3})(?:ix|iv|v?i{0,3})$')
+ROMAN_VALUES = {'i': 1, 'v': 5, 'x': 10, 'l': 50, 'c': 100, 'd': 500,
+                'm': 1000}
+LETTERED = r'[A-Za-z]|[ivxlcdm]{2,}|[IVXLCDM]{2,}'
+LIST_MARKER_RE = re.compile(
+    r' {,3}(\((?:\d{1,9}|' + LETTERED + r')\)'
+    r'|(?:' + LETTERED + r')\)'
+    r'|\d{1,9}[.)]'
+    r'|[*\-+])[ \t\n\r\f]')
+
+# \setcounter needs the counter by name, and LaTeX has four.
+ENUM_COUNTERS = ('enumi', 'enumii', 'enumiii', 'enumiv')
+
 # A slide's own metadata block: '===', YAML, and a closing '---'.
 #
 # The opener is not '---' on purpose.  A '---' starts a slide, and two of
@@ -588,6 +608,67 @@ is also left alone -- it would be too easy to eat the rest of an
         kept.append(line)
 
     return ''.join(kept)
+
+
+###########################################
+def roman_value(text):
+    """roman_value(str) -> int"""
+    total = largest = 0
+    for char in reversed(text.lower()):
+        value = ROMAN_VALUES[char]
+        total += -value if value < largest else value
+        largest = max(largest, value)
+    return total
+
+
+###########################################
+def list_marker(bullet):
+    """list_marker(str) -> (str, str, int) or None
+
+The delimiter, counter and starting value of an ordered list's marker, or
+None for a bullet: '(a)' is ('(%s)', 'a', 1), '2.' is ('%s.', '1', 2) and
+'(iv)' is ('(%s)', 'i', 4).
+
+The counter is the character beamer reads as "number it this way", so the
+delimiter with the counter in it is the template for the list -- which is
+why the author writing the first label is all it takes to set them all.
+
+A lone 'i' is roman, since that is what anyone writing '(i)' means; every
+other single letter is alphabetic, and '(v)' is therefore the twenty-second
+letter rather than five.  Ambiguity has to fall somewhere.
+"""
+    if bullet.startswith('(') and bullet.endswith(')'):
+        delimiter, body = '(%s)', bullet[1:-1]
+    elif bullet.endswith(')'):
+        delimiter, body = '%s)', bullet[:-1]
+    elif bullet.endswith('.'):
+        delimiter, body = '%s.', bullet[:-1]
+    else:
+        return None
+
+    if body.isdigit():
+        return delimiter, '1', int(body)
+    if (len(body) > 1 or body.lower() == 'i') and ROMAN_RE.match(body):
+        return delimiter, 'i' if body.islower() else 'I', roman_value(body)
+    if len(body) == 1 and body.isalpha():
+        return (delimiter, 'a' if body.islower() else 'A',
+                ord(body.lower()) - ord('a') + 1)
+    return None
+
+
+###########################################
+def same_list_family(bullet, other):
+    """same_list_family(str, str) -> bool
+
+Whether two markers belong to one list.  Two bullets agree when they are the
+same character, as CommonMark says; two numbers agree when they are written
+the same way, so that '(a)' and '(b)' continue each other while '(a)' and
+'a)' start two lists.
+"""
+    one, two = list_marker(bullet), list_marker(other)
+    if one is None or two is None:
+        return one is two and bullet == other
+    return one[:2] == two[:2]
 
 
 ###########################################
@@ -927,6 +1008,96 @@ an underscore or an asterisk would otherwise be taken as markup.
     parse_group = 0             # the pattern has no capturing group
 
 
+class List(marko.block.List):
+    """An ordered list, which may be lettered, roman, or start where it likes.
+
+marko's own knows '1.' and '1)' and nothing else, so '(a)' was a paragraph
+beginning with a bracket.  Widening the marker here keeps the rest of marko's
+list machinery -- continuations, nesting, tight versus loose -- which is the
+part worth not reimplementing.
+"""
+
+    override = True
+    pattern = LIST_MARKER_RE
+
+    @classmethod
+    def match(cls, source):
+        match = source.expect_re(cls.pattern)
+        if not match:
+            return False
+
+        bullet = match.group(1)
+        marker = list_marker(bullet)
+        source.context.list_info = cls.ParseInfo(
+            bullet, marker is not None, marker[2] if marker else 1)
+        return True
+
+
+class ListItem(marko.block.ListItem):
+    """An item of one.
+
+Same widening, and the test for whether an item belongs to the list above it
+becomes "written the same way" rather than marko's "both end in the same
+punctuation": '(a)' and 'a)' are two lists, not one.
+"""
+
+    override = True
+    pattern = LIST_MARKER_RE
+
+    @classmethod
+    def match(cls, source):
+        if source.parser.block_elements['ThematicBreak'].match(source):
+            return False
+        if not source.expect_re(cls.pattern):
+            return False
+
+        line = source.next_line(False).expandtabs(4)
+        prefix = re.match(source.prefix, line)
+        indent, bullet, mid, _ = cls.parse_leading(
+            line.rstrip(), prefix.end() if prefix else 0)
+
+        if not same_list_family(bullet, source.state.bullet):
+            return False
+
+        source.context.list_item_info = cls.ParseInfo(indent, bullet, mid)
+        return True
+
+
+class Paragraph(marko.block.Paragraph):
+    """A paragraph, which a list may interrupt.
+
+CommonMark lets a list interrupt a paragraph only when it starts at one,
+so that a sentence ending in a year does not become a list.  marko tests
+that by looking at the marker: it has to be written '1'.  Ours may be
+written '(a)' or '(i)', which is the same thing said another way, and
+without this a nested lettered list under an item was swallowed into the
+item's own text.
+
+Only the case marko declines is added; everything else is still its
+decision, which keeps the amount of its block loop living here to a
+minimum.
+"""
+
+    override = True
+
+    @classmethod
+    def break_paragraph(cls, source, lazy=False):
+        if super().break_paragraph(source, lazy):
+            return True
+
+        previous = source.match
+        try:
+            if not source.parser.block_elements['List'].match(source):
+                return False
+            _, bullet, _, tail = source.parser.block_elements[
+                'ListItem'].parse_leading(source.next_line().rstrip(), 0)
+            marker = list_marker(bullet)
+            return bool(marker and marker[2] == 1 and tail)
+        finally:
+            source.match = previous
+
+
+###########################################
 class SlideMetadata(marko.block.BlockElement):
     """A slide's own metadata block, '---' to '---'.
 
@@ -1338,6 +1509,7 @@ The elements above, as an extension to register with marko.
         elements=[MathDisplay, LatexMathDisplay, LatexMath, Math, Graphic,
                   Span, Highlight, RawLatexInline,
                   RawLatexEnvironment, RawLatexMacroLine, SlideMetadata,
+                  List, ListItem, Paragraph,
                   Directive, StrayDirectiveEnd])
 
 
@@ -1659,13 +1831,31 @@ A slide's title, as Markdown where it parsed as Markdown.
         itemsep = self.itemsep_at(self._list_depth)
         if itemsep is not None:
             tight += '\\setlength{\\itemsep}{%s}\n' % itemsep
+
+        # What the author wrote the first marker as is what the list looks
+        # like: beamer reads an enumerate's optional argument as the template
+        # for its labels, and '(a)' is that template already.  The plain '1.'
+        # is left without one, so that every deck written before this renders
+        # exactly as it did.
+        options = ''
+        marker = list_marker(element.bullet) if element.ordered else None
+        if marker is not None:
+            delimiter, counter, start = marker
+            if (delimiter, counter) != ('%s.', '1'):
+                options = '[%s]' % (delimiter % counter)
+            if start != 1 and self._list_depth <= len(ENUM_COUNTERS):
+                # \setcounter, not a package: the counter is one behind the
+                # first \item, and LaTeX has one per level
+                tight += '\\setcounter{%s}{%d}\n' % (
+                    ENUM_COUNTERS[self._list_depth - 1], start - 1)
+
         try:
             body = self.render_children(element)
         finally:
             self._list_depth -= 1
 
-        return '\\begin{%s}\n%s%s\\end{%s}\n' % (
-            environment, tight, body, environment)
+        return '\\begin{%s}%s\n%s%s\\end{%s}\n' % (
+            environment, options, tight, body, environment)
 
     def itemsep_at(self, level):
         """itemsep_at(int) -> str or None

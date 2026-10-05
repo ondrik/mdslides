@@ -28,6 +28,11 @@ syntax case match
 " bare '---' or a bare '\macro' -- the metadata fences, the environments --
 " must be defined after them.
 
+" An ordered list's marker, which says what the list looks like: a letter
+" or a roman numeral needs a parenthesis, a digit keeps CommonMark's '1.'.
+syn match mdslidesListMarker
+      \ /^\s\{0,3}\%((\%(\d\{1,9}\|[A-Za-z]\|[ivxlcdm]\{2,}\|[IVXLCDM]\{2,}\))\|\%([A-Za-z]\|[ivxlcdm]\{2,}\|[IVXLCDM]\{2,}\))\|\d\{1,9}[.)]\)\ze[ \t]/
+
 " A thematic break starts an untitled frame.
 syn match mdslidesBreak /^\s\{0,3}\%(---\+\|\*\*\*\+\|___\+\)[ \t]*$/
 
@@ -117,13 +122,16 @@ syn region mdslidesMathParen start=/\\(/ end=/\\)/ oneline keepend
 
 " ==like this== becomes the highlight macro.  Three or more '=' are left
 " alone, which is what keeps a setext underline safe.
-syn match mdslidesHighlight /\%(=\)\@<!==[^= \t][^=]*[^= \t]==\%(=\)\@!/
+" The contents may cross a line break, since prose is wrapped.
+syn match mdslidesHighlight
+      \ /\%(=\)\@<!==[^= \t]\_[^=]\{-}[^= \t]==\%(=\)\@!/
 syn match mdslidesHighlight /\%(=\)\@<!==[^= \t]==\%(=\)\@!/
 
 " [text]{.macro}: the class is the macro name.
-syn match mdslidesSpan /\[[^]\n]*\]{[^}\n]*}/
+" As the highlight, the text may wrap; the ']' and the '{' stay adjacent.
+syn match mdslidesSpan /\[\_[^]]\{-}\]{[^}\n]*}/
       \ contains=mdslidesSpanText,mdslidesClass
-syn match mdslidesSpanText /\[\zs[^]\n]*\ze\]/ contained
+syn match mdslidesSpanText /\[\zs\_[^]]\{-}\ze\]/ contained
 
 " An image with the attribute list mdslides reads.
 syn match mdslidesImage /!\[[^]\n]*\]([^)\n]*)\%({[^}\n]*}\)\=/
@@ -161,6 +169,7 @@ hi def link mdslidesClass            Type
 hi def link mdslidesLabel            Underlined
 hi def link mdslidesOption           Special
 hi def link mdslidesBreak            PreProc
+hi def link mdslidesListMarker       Identifier
 hi def link mdslidesDirective        Statement
 hi def link mdslidesDirectiveEnd     Statement
 hi def link mdslidesDirectiveArgs    Normal
@@ -178,5 +187,9 @@ hi def link mdslidesSpanText         Normal
 hi def link mdslidesImage            Underlined
 hi def link mdslidesComment          Comment
 hi def link mdslidesHtmlComment      Comment
+
+" Both metadata blocks, the environments and the wrapped inline spans can
+" all start well above the window, so looking back a little is necessary.
+syn sync minlines=60
 
 let b:current_syntax = 'mdslides'

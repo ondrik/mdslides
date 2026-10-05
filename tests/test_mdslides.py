@@ -1824,6 +1824,41 @@ def test_a_roman_and_an_alphabetic_list_stay_apart(render):
     assert body.count('\\begin{enumerate}') == 2
 
 
+def test_a_span_may_cross_a_line_break(render):
+    """Prose is wrapped, and a span is no more willing to be split than
+emphasis is.  It used to come out with its brackets intact."""
+    body = render('# S\n\nstates ([like union, intersection and set\n'
+                  'complement]{.hlgr}), here\n')
+    assert '\\hlgr{like union, intersection and set\ncomplement}' in body
+    assert '[like union' not in body
+
+
+def test_a_highlight_may_cross_a_line_break(render):
+    body = render('# S\n\nsome ==text that wraps\nacross a line== here\n')
+    assert '\\hlbl{text that wraps\nacross a line}' in body
+
+
+def test_a_span_does_not_cross_a_paragraph(render):
+    """Only a paragraph's own text is searched, so there is nothing to run
+past -- but it is worth pinning."""
+    body = render('# S\n\n[one\n\ntwo]{.hlgr}\n')
+    assert '\\hlgr' not in body
+
+
+def test_a_brace_group_after_a_link_is_not_a_span(render):
+    """The ']' and the '{' stay adjacent, which is what keeps this apart."""
+    body = render('# S\n\nA link [text](http://x.org) {not a span}.\n')
+    assert '\\href' in body
+    assert '{not a span}' in body
+
+
+def test_an_unclosed_bracket_does_not_find_a_later_brace(render):
+    body = render('# S\n\nA stray bracket [here with nothing closing it\n'
+                  'but a later line has {braces} in it.\n')
+    assert '[here with nothing closing it' in body
+    assert '\\begin{' not in body.split('A stray')[1]
+
+
 def test_differently_written_markers_are_different_lists(render):
     """'(a)' and 'a)' do not continue each other."""
     body = render('# S\n\n(a) one\n\na) two\n')

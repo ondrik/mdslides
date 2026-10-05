@@ -614,13 +614,16 @@ second passes through, which LaTeX still typesets.
 `highlight` metadata key. It nests with emphasis either way round —
 `==**x**==` and `**==x==**` both work. As with `**`, the delimiters may not
 sit against whitespace, so `a == b` stays arithmetic, and a run of three or
-more `=` is left alone, so a setext underline is safe.
+more `=` is left alone, so a setext underline is safe. It may run across a
+line break, as a bracketed span may.
 
 **Bracketed spans.** `[text]{.hlrd}` becomes `\hlrd{text}` — the class *is*
 the macro name, so any macro of your own works without being registered, and
 several nest with the first outermost: `[x]{.hlbl .hlgr}` is
 `\hlbl{\hlgr{x}}`, which means the *last* class is the colour you see. The
-contents are Markdown. Nothing checks that the macro exists; a typo surfaces
+contents are Markdown, and may run across a line break, since prose is
+wrapped — but the `]` and the `{` stay together, so `[text](url) {braces}` is
+not one of these. Nothing checks that the macro exists; a typo surfaces
 as an undefined control sequence from LaTeX, and `--pdf` will not show you
 that error. The template predefines `\hlbl` (`blue`), `\hlgr`
 (`olive!50!green`), `\hlrd` (`red`), `\hlorg` (`Orange`), `\hlgrey`

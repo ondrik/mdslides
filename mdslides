@@ -1021,7 +1021,7 @@ is never mistaken for one.
     # above emphasis, so that '==**x**==' nests the right way round; below
     # code spans and maths, so that '$a == b$' is left alone
     priority = 6
-    pattern = re.compile(r'(?<![=\\])==(?![=\s])((?:[^=\n]|=(?!=))+?)(?<!\s)==(?!=)')
+    pattern = re.compile(r'(?<![=\\])==(?![=\s])((?:[^=]|=(?!=))+?)(?<!\s)==(?!=)')
     parse_children = True
 
 
@@ -1035,7 +1035,12 @@ several, the first ends up outermost.
 
     # above the link parser, or '[text]{...}' would be read as a link label
     priority = 7
-    pattern = re.compile(r'\[((?:[^\[\]\n]|\\.)+)\]\{([^{}\n]*)\}')
+    # The text may cross a line break, since prose is wrapped and a span is
+    # no more willing to be split than emphasis is.  Only a paragraph's own
+    # text is ever searched, so there is no blank line to run past.  The ']'
+    # and the '{' stay adjacent, which is what keeps '[text](url) {x}' from
+    # being read as one of these.
+    pattern = re.compile(r'\[((?:[^\[\]]|\\.)+)\]\{([^{}\n]*)\}')
     parse_children = True
     parse_group = 1
 

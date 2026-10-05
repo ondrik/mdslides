@@ -1803,6 +1803,27 @@ def test_list_items_are_still_markdown(render):
     assert '\\item one with \\textbf{bold} and $x_1$' in body
 
 
+def test_a_roman_list_survives_v_and_x(render):
+    """The first marker settles the style and the rest are read in it.
+Deciding per marker instead ended a roman list at (v), which is a single
+letter and so looked alphabetic -- and again at (x), (l), (c), (d) and (m)."""
+    body = render('# S\n\n(iii) three\n(iv) four\n(v) five\n(ix) nine\n(x) ten\n')
+    assert body.count('\\begin{enumerate}') == 1
+    assert body.count('\\item') == 5
+
+
+def test_an_alphabetic_list_survives_v_too(render):
+    """Settled the other way, the same letter keeps counting letters."""
+    body = render('# S\n\n(t) twenty\n(u) one\n(v) two\n(w) three\n')
+    assert body.count('\\begin{enumerate}') == 1
+    assert '\\setcounter{enumi}{19}' in body
+
+
+def test_a_roman_and_an_alphabetic_list_stay_apart(render):
+    body = render('# S\n\n(a) alpha\n\n(ii) roman\n')
+    assert body.count('\\begin{enumerate}') == 2
+
+
 def test_differently_written_markers_are_different_lists(render):
     """'(a)' and 'a)' do not continue each other."""
     body = render('# S\n\n(a) one\n\na) two\n')

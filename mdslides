@@ -622,53 +622,101 @@ def roman_value(text):
 
 
 ###########################################
-def list_marker(bullet):
-    """list_marker(str) -> (str, str, int) or None
+def split_marker(bullet):
+    """split_marker(str) -> (str, str) or (None, None)
 
-The delimiter, counter and starting value of an ordered list's marker, or
-None for a bullet: '(a)' is ('(%s)', 'a', 1), '2.' is ('%s.', '1', 2) and
-'(iv)' is ('(%s)', 'i', 4).
+An ordered list marker as its delimiter and the text inside it: '(a)' is
+('(%s)', 'a'), '2.' is ('%s.', '2').  (None, None) for a bullet.
+"""
+    if bullet.startswith('(') and bullet.endswith(')'):
+        return '(%s)', bullet[1:-1]
+    if bullet.endswith(')'):
+        return '%s)', bullet[:-1]
+    if bullet.endswith('.'):
+        return '%s.', bullet[:-1]
+    return None, None
+
+
+###########################################
+def marker_value(body, counter):
+    """marker_value(str, str) -> int or None
+
+What a marker counts to when read in a given style, or None when it cannot
+be read that way at all.
+"""
+    if counter == '1':
+        return int(body) if body.isdigit() else None
+
+    if counter in ('i', 'I'):
+        if not ROMAN_RE.match(body):
+            return None
+        if body.islower() != (counter == 'i'):
+            return None
+        return roman_value(body)
+
+    if len(body) != 1 or not body.isalpha():
+        return None
+    if body.islower() != (counter == 'a'):
+        return None
+    return ord(body.lower()) - ord('a') + 1
+
+
+###########################################
+def list_marker(bullet, counter=None):
+    """list_marker(str, str) -> (str, str, int) or None
+
+The delimiter, counter and value of an ordered list's marker, or None for a
+bullet: '(a)' is ('(%s)', 'a', 1), '2.' is ('%s.', '1', 2) and '(iv)' is
+('(%s)', 'i', 4).
 
 The counter is the character beamer reads as "number it this way", so the
 delimiter with the counter in it is the template for the list -- which is
 why the author writing the first label is all it takes to set them all.
 
-A lone 'i' is roman, since that is what anyone writing '(i)' means; every
-other single letter is alphabetic, and '(v)' is therefore the twenty-second
-letter rather than five.  Ambiguity has to fall somewhere.
+With `counter' given the marker is read in that style, which is how a list
+goes on: the first marker settles what the list is, and '(v)' after '(iv)'
+is then five rather than the twenty-second letter.  Settling it per marker
+instead would end a roman list at (v), and again at (x).
+
+Deciding it the first time, a lone 'i' is roman, since that is what anyone
+writing '(i)' means; every other single letter is alphabetic.  Ambiguity has
+to fall somewhere, and a list that opens at (v) is rarer than one that opens
+at (i).
 """
-    if bullet.startswith('(') and bullet.endswith(')'):
-        delimiter, body = '(%s)', bullet[1:-1]
-    elif bullet.endswith(')'):
-        delimiter, body = '%s)', bullet[:-1]
-    elif bullet.endswith('.'):
-        delimiter, body = '%s.', bullet[:-1]
-    else:
+    delimiter, body = split_marker(bullet)
+    if not body:
         return None
 
-    if body.isdigit():
-        return delimiter, '1', int(body)
-    if (len(body) > 1 or body.lower() == 'i') and ROMAN_RE.match(body):
-        return delimiter, 'i' if body.islower() else 'I', roman_value(body)
-    if len(body) == 1 and body.isalpha():
-        return (delimiter, 'a' if body.islower() else 'A',
-                ord(body.lower()) - ord('a') + 1)
-    return None
+    if counter is None:
+        if body.isdigit():
+            counter = '1'
+        elif (len(body) > 1 or body.lower() == 'i') and ROMAN_RE.match(body):
+            counter = 'i' if body.islower() else 'I'
+        elif len(body) == 1 and body.isalpha():
+            counter = 'a' if body.islower() else 'A'
+        else:
+            return None
+
+    value = marker_value(body, counter)
+    return None if value is None else (delimiter, counter, value)
 
 
 ###########################################
 def same_list_family(bullet, other):
     """same_list_family(str, str) -> bool
 
-Whether two markers belong to one list.  Two bullets agree when they are the
-same character, as CommonMark says; two numbers agree when they are written
-the same way, so that '(a)' and '(b)' continue each other while '(a)' and
-'a)' start two lists.
+Whether `bullet' continues the list `other' opened.  Two bullets agree when
+they are the same character, as CommonMark says.  A number agrees when it is
+written the same way and can be read in the style the list is already using,
+so '(a)' and 'a)' start two lists while '(iv)' and '(v)' continue one.
 """
-    one, two = list_marker(bullet), list_marker(other)
-    if one is None or two is None:
-        return one is two and bullet == other
-    return one[:2] == two[:2]
+    opened = list_marker(other)
+    if opened is None:
+        return list_marker(bullet) is None and bullet == other
+
+    delimiter, counter, _ = opened
+    here = list_marker(bullet, counter)
+    return here is not None and here[0] == delimiter
 
 
 ###########################################

@@ -548,8 +548,12 @@ Two details worth knowing:
   because a line beginning `A. Turing wrote` would otherwise become one.
   Digits keep CommonMark's `1.` as well as `1)`.
 * **A lone `i` is roman**, since that is what anyone writing `(i)` means.
-  Every other single letter is alphabetic, so `(v)` is the twenty-second
-  letter rather than five. Ambiguity has to fall somewhere.
+  Every other single letter opening a list is alphabetic, so a list that
+  *begins* `(v)` begins at the twenty-second letter rather than five.
+  Ambiguity has to fall somewhere, and a list opening at `(i)` is commoner
+  than one opening at `(v)`. Only the first marker is read this way: the rest
+  are read in the style it settled, so `(iv)`, `(v)`, `(vi)` is one roman
+  list and `(t)`, `(u)`, `(v)` is one alphabetic one.
 
 Written differently, written separately: `(a)` and `a)` are two lists, not
 one, the same way `*` and `-` are.
